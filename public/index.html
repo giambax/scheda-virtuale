@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheda Virtuale STM32</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='6' width='20' height='20' rx='2' fill='%23222' transform='rotate(45 16 16)'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%233ddc84'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="web.css">
+<script>
+/* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
+ * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
+ * volta la pagina si ricarica una volta da sola per passare dal service worker. */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('../sw.js').then(reg => {
+    if (!self.crossOriginIsolated) {
+      let tries = +(sessionStorage.getItem('sv-ricarica') || 0);
+      const again = () => { if (tries < 2) { sessionStorage.setItem('sv-ricarica', String(tries + 1)); location.reload(); } };
+      if (navigator.serviceWorker.controller) again();
+      else navigator.serviceWorker.addEventListener('controllerchange', again);
+    } else sessionStorage.removeItem('sv-ricarica');
+  });
+}
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect x="7" y="7" width="18" height="18" rx="2" fill="currentColor" transform="rotate(45 16 16)"/><circle cx="16" cy="16" r="3.6" fill="var(--led)"/></svg>
+    <span>Scheda Virtuale</span><small>NUCLEO-F401RE</small>
+  </div>
+  <div class="now">
+    <span id="status" class="pill idle">Pronta</span>
+    <span id="projname" class="projname"></span>
+    <span id="source" class="source"></span>
+  </div>
+  <div class="controls">
+    <button id="btn-run" class="primary" disabled title="Compila e avvia il progetto selezionato">▶ Avvia</button>
+    <button id="btn-debug" hidden disabled title="Compila e avvia con il debugger: breakpoint, passo passo, variabili locali">🐞 Debug</button>
+    <button id="btn-reset" disabled title="Come il pulsante nero RESET della scheda">⟲ Reset</button>
+    <button id="btn-pause" disabled title="Ferma il tempo simulato">⏸ Pausa</button>
+    <button id="btn-stop" disabled title="Spegni la scheda">■ Stop</button>
+    <label class="speed" title="Velocità del tempo simulato">
+      <span>Velocità</span>
+      <select id="speed">
+        <option value="0.1">0,1×</option><option value="0.25">0,25×</option><option value="0.5">0,5×</option>
+        <option value="1" selected>1×</option><option value="2">2×</option><option value="5">5×</option>
+      </select>
+    </label>
+    <label class="switch" hidden title="Quando compili o lanci il progetto in CubeIDE, la simulazione parte da sola">
+      <input type="checkbox" id="auto" checked><span class="slider"></span><span>Avvio da CubeIDE</span>
+    </label>
+    <label class="switch" hidden id="safari-sw" title="Quando lanci o compili da CubeIDE, Safari passa in primo piano sul simulatore">
+      <input type="checkbox" id="safari" checked><span class="slider"></span><span id="safari-txt">Apri in Safari</span>
+    </label>
+    <button id="btn-help" class="ghost" title="Come si usa">?</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="projects">
+    <div class="ph">
+      <h2>Progetti</h2>
+      <button id="btn-refresh" class="ghost small" title="Aggiorna l'elenco">↻</button>
+    </div>
+    <div class="utente">
+      <span>Utente: <b id="utente-nome"></b></span>
+      <button id="btn-utente" class="ghost small" title="Cambia nome utente">cambia</button>
+    </div>
+    <div id="sync-stato" class="sync-stato small" hidden title="Clic: sincronizza adesso"></div>
+    <div class="carica">
+      <button id="btn-nuovo" class="ghost small" title="Progetto vuoto per la NUCLEO-F401RE (LD2, B1, USART2 già configurati)">＋ Nuovo</button>
+      <label class="btnlike" title="La cartella di un progetto CubeIDE (quella con il file .ioc), o un intero workspace">📁 Cartella<input id="in-cartella" type="file" webkitdirectory hidden></label>
+      <label class="btnlike" title="Uno zip del progetto (anche fatto su Windows), o uno zip esportato da qui">🗜 Zip<input id="in-zip" type="file" accept=".zip,application/zip" hidden></label>
+      <button id="btn-esporta" class="ghost small" title="Scarica tutti i tuoi progetti in uno zip, da caricare su un altro computer">⬇ Tutti</button>
+    </div>
+    <div class="progazioni" id="progazioni" hidden>
+      <span class="muted small">Progetto:</span>
+      <button id="btn-rinomina" class="ghost small">Rinomina</button>
+      <button id="btn-esporta1" class="ghost small" title="Scarica solo questo progetto (.zip)">⬇ Zip</button>
+      <button id="btn-elimina" class="ghost small danger">Elimina</button>
+    </div>
+    <div id="comp-stato" class="comp-stato muted small"></div>
+    <input id="filter" type="search" placeholder="Cerca progetto…" autocomplete="off">
+    <div id="projlist" class="projlist"></div>
+  </aside>
+
+  <section class="center">
+    <div class="timebar">
+      <span id="simtime">t = 0,000 s</span>
+      <span id="tick" class="muted">HAL_GetTick() = 0</span>
+      <span id="primask" class="badge warn" hidden>interrupt disabilitati</span>
+      <span id="clocks" class="muted"></span>
+    </div>
+    <div id="banner" class="banner" hidden></div>
+    <div id="dbgbar" class="dbgbar" hidden></div>
+    <div id="dbgpanel" class="card dbgpanel" hidden></div>
+    <div class="boardwrap"><div id="board"></div></div>
+    <div id="devcard" class="card devcard"></div>
+    <div class="card">
+      <div class="ch"><h3>Interrupt</h3><span class="muted small">quante volte è stato eseguito ogni handler</span></div>
+      <div id="irqs" class="irqs"><span class="muted small">Nessun interrupt finora.</span></div>
+    </div>
+  </section>
+
+  <section class="side">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="pins">Pin</button>
+      <button class="tab" data-tab="vars" hidden>Variabili</button>
+      <button class="tab" data-tab="serial">Seriale <span id="serial-dot" class="dot" hidden></span></button>
+      <button class="tab" data-tab="scope">Segnali</button>
+      <button class="tab" data-tab="code">Codice</button>
+      <button class="tab" data-tab="log">Registro <span id="log-count" class="count" hidden>0</span></button>
+    </nav>
+
+    <div class="pane" id="pane-vars">
+      <div id="vars" class="vars"><p class="empty">Avvia un progetto: qui vedi le variabili globali e <code>static</code> del programma che cambiano mentre gira.</p></div>
+    </div>
+
+    <div class="pane active" id="pane-pins">
+      <div id="pins" class="pins"><p class="empty">Avvia un progetto: qui compaiono i pin che il programma usa, con LED, pulsanti e cursori per interagire.</p></div>
+    </div>
+
+    <div class="pane" id="pane-serial">
+      <div class="serial-head">
+        <div id="uart-tabs" class="seg"></div>
+        <span class="muted small">USART2 = porta seriale USB del ST-LINK (115200 baud)</span>
+        <button id="serial-clear" class="ghost small">Pulisci</button>
+      </div>
+      <pre id="serial" class="terminal"></pre>
+      <form id="serial-form" class="serial-send">
+        <input id="serial-input" type="text" placeholder="Scrivi e premi Invio per mandarlo alla scheda…" autocomplete="off">
+        <select id="serial-eol" title="Fine riga"><option value="">nessuna</option><option value="\n" selected>\n</option><option value="\r\n">\r\n</option><option value="\r">\r</option></select>
+        <button type="submit">Invia</button>
+      </form>
+    </div>
+
+    <div class="pane" id="pane-scope">
+      <div class="scope-head">
+        <div class="seg" id="scope-span">
+          <button data-span="1000">1 s</button><button data-span="5000" class="on">5 s</button><button data-span="10000">10 s</button><button data-span="30000">30 s</button>
+        </div>
+        <button id="scope-freeze" class="ghost small">Blocca</button>
+        <span class="muted small">livello logico dei pin nel tempo simulato</span>
+      </div>
+      <canvas id="scope"></canvas>
+    </div>
+
+    <div class="pane" id="pane-code">
+      <div class="codebar">
+        <div id="edtabs" class="edtabs"></div>
+        <select id="edopen" title="Apri un altro file del progetto"></select>
+        <button id="btn-cerca" class="ghost small" title="Cerca e sostituisci (Ctrl/⌘+F)">🔍</button>
+        <button id="btn-salva" class="primary small" title="Salva le modifiche e ricompila (Ctrl/⌘+S)" disabled>Salva e avvia</button>
+      </div>
+      <div id="files" hidden></div>
+      <div id="code" hidden></div>
+      <div id="cm" class="cmhost"></div>
+    </div>
+
+    <div class="pane" id="pane-log">
+      <div id="log" class="log"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="help">
+  <form method="dialog">
+    <h2>Scheda virtuale nel browser</h2>
+    <p>Il tuo progetto CubeIDE viene compilato <b>qui nella pagina</b> (clang in WebAssembly) con una HAL simulata: GPIO, interrupt EXTI, timer (anche PWM), UART, ADC, SysTick e priorità NVIC. Nessun server: i progetti restano in questo browser, sotto il tuo nome utente.</p>
+    <ol>
+      <li><b>＋ Nuovo</b> crea un progetto vuoto per la NUCLEO-F401RE (LD2, B1 e seriale già pronti): scrivi il codice tra <code>USER CODE BEGIN</code> e <code>END</code>.</li>
+      <li><b>📁 Cartella</b>: la cartella del progetto CubeIDE (quella con il file <code>.ioc</code>) o un intero workspace (scegli tu quali progetti). <b>🗜 Zip</b>: uno zip del progetto, anche fatto su Windows. Bastano anche solo i file <code>.c</code>/<code>.h</code> con il <code>.ioc</code>: gli header della HAL li mette il sito.</li>
+      <li>Premi <b>▶ Avvia</b>. La prima volta si scarica il compilatore (poi resta in cache e funziona anche senza Internet).</li>
+      <li>Nel <b>Codice</b> modifichi i file (più file aperti a schede, 🔍 o <kbd>Ctrl/⌘+F</kbd> per cercare) e con <b>Salva e avvia</b> o <kbd>Ctrl/⌘+S</kbd> ricompili. Gli errori sono sottolineati in rosso: clicca l'errore in alto per andare alla riga.</li>
+      <li><b>⬇ Tutti</b> scarica uno zip con tutti i tuoi progetti (<b>⬇ Zip</b> solo quello scelto): caricalo su un altro computer con 🗜 Zip.</li>
+    </ol>
+    <h3>Interagire</h3>
+    <ul>
+      <li>Tieni premuto il pulsante blu <b>B1</b> (o il tasto <kbd>B</kbd>), il nero è <b>RESET</b>.</li>
+      <li>Nella scheda <b>Pin</b> trovi un pulsante per ogni ingresso, un LED per ogni uscita, un cursore per ogni canale ADC. Sotto la scheda i <b>Dispositivi</b> (display, encoder, pulsanti, motori…).</li>
+    </ul>
+    <p class="muted small">Limiti del prototipo: gli interrupt partono nei punti in cui il programma consuma tempo (cicli while/for, HAL_Delay, HAL_GetTick), non a metà di un'istruzione; niente debug passo passo e niente scheda Variabili per ora. Micro supportati: STM32F401 e STM32F411 (header HAL STM32Cube F4 V1.28.3).</p>
+    <div class="right"><button class="primary">Ho capito</button></div>
+  </form>
+</dialog>
+
+<dialog id="scegli">
+  <form method="dialog" id="scegli-form">
+    <h2 id="scegli-titolo">Quali progetti carico?</h2>
+    <div id="scegli-lista" class="scegli-lista"></div>
+    <label class="small"><input type="checkbox" id="scegli-sostituisci"> sostituisci i progetti con lo stesso nome (altrimenti li tengo tutti e due)</label>
+    <div class="right"><button value="no" class="ghost">Annulla</button> <button value="si" class="primary">Carica</button></div>
+  </form>
+</dialog>
+
+<dialog id="accesso" class="accesso">
+  <div class="acc-head">
+    <h2>Scheda Virtuale STM32</h2>
+    <nav class="acc-tabs"><a href="#" data-vai="entra">Entra</a><a href="#" data-vai="iscriviti">Crea un account</a></nav>
+  </div>
+  <form id="acc-entra" data-pane="entra">
+    <label>Nome utente o email<input id="acc-login" type="text" required autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+    <label>Password<input id="acc-pw" type="password" required autocomplete="current-password"></label>
+    <div class="right"><a href="#" data-vai="dimenticata" class="small">Password dimenticata?</a> <button type="submit" class="primary">Entra</button></div>
+  </form>
+  <form id="acc-iscriviti" data-pane="iscriviti" hidden>
+    <label>Nome utente <span class="muted small">(3–20 caratteri: a-z 0-9 _ . -, lo vedono solo i tuoi progetti)</span><input id="acc-nuovo-nome" type="text" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_.\-]{3,20}" autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+    <label>Email <span class="muted small">(serve solo per recuperare la password)</span><input id="acc-email" type="email" required autocomplete="email"></label>
+    <label>Password <span class="muted small">(almeno 8 caratteri)</span><input id="acc-nuovo-pw" type="password" required minlength="8" autocomplete="new-password"></label>
+    <label>Ripeti la password<input id="acc-nuovo-pw2" type="password" required minlength="8" autocomplete="new-password"></label>
+    <p class="muted small">Creando l'account accetti che nome utente, email e progetti siano salvati come spiegato nella <a href="privacy.html" target="_blank">privacy</a>.</p>
+    <div class="right"><button type="submit" class="primary">Crea l'account</button></div>
+  </form>
+  <form id="acc-dimenticata" data-pane="dimenticata" hidden>
+    <p>Scrivi l'email dell'account: ti mando un link per scegliere una nuova password.</p>
+    <label>Email<input id="acc-recupero" type="email" required autocomplete="email"></label>
+    <div class="right"><a href="#" data-vai="entra" class="small">Torna indietro</a> <button type="submit" class="primary">Mandami il link</button></div>
+  </form>
+  <form id="acc-nuova" data-pane="nuova" hidden>
+    <p>Scegli la nuova password.</p>
+    <label>Nuova password<input id="acc-nuova-pw" type="password" required minlength="8" autocomplete="new-password"></label>
+    <label>Ripeti<input id="acc-nuova-pw2" type="password" required minlength="8" autocomplete="new-password"></label>
+    <div class="right"><button type="submit" class="primary">Salva la password</button></div>
+  </form>
+  <p id="acc-msg" class="acc-msg" role="status"></p>
+  <p class="muted small"><a href="privacy.html" target="_blank">Privacy: quali dati si salvano</a></p>
+</dialog>
+
+<dialog id="account">
+  <form method="dialog">
+    <h2>Il tuo account</h2>
+    <p>Nome utente: <b id="acc-io-nome"></b><br>Email: <span id="acc-io-email"></span></p>
+    <h3>Cambia password</h3>
+    <div class="riga"><input id="acc-cambia-pw" type="password" minlength="8" placeholder="nuova password (almeno 8 caratteri)" autocomplete="new-password"></div>
+    <div class="riga"><input id="acc-cambia-pw2" type="password" minlength="8" placeholder="ripeti la nuova password" autocomplete="new-password"> <button id="btn-cambia-pw" type="button">Cambia</button></div>
+    <h3>Progetti salvati prima, senza account</h3>
+    <div id="acc-vecchi" class="muted small">Nessuno in questo browser.</div>
+    <h3>Elimina l'account</h3>
+    <p class="small">Cancella per sempre l'account e tutti i progetti online. Prima puoi scaricarli con ⬇ Tutti.</p>
+    <div class="riga"><button id="btn-elimina-account" type="button" class="danger">Elimina l'account…</button></div>
+    <p id="acc-io-msg" class="acc-msg" role="status"></p>
+    <div class="right"><button id="btn-esci" type="button">Esci</button> <button class="primary">Chiudi</button></div>
+  </form>
+</dialog>
+
+<footer class="piede"><a href="privacy.html" target="_blank">Privacy</a> · Scheda Virtuale STM32</footer>
+
+<dialog id="login">
+  <form method="dialog" id="login-form">
+    <h2>Come ti chiami?</h2>
+    <p>Basta un nome (niente password): i tuoi progetti si salvano in questo browser sotto questo nome.</p>
+    <input id="login-nome" type="text" required maxlength="40" autocomplete="username" placeholder="es. mario.rossi">
+    <div class="right"><button class="primary">Entra</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="local-server.js"></script>
+</body>
+</html>

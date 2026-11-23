@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Scheda Virtuale STM32</title>
+<style>
+  :root { --bg: #f6f7f9; --text: #1d2330; --muted: #5b6475; --card: #fff; --border: #dde1e7; --accent: #2f6fde; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0e1116; --text: #e5e8ed; --muted: #98a1b0; --card: #161a21; --border: #2a303a; --accent: #6ea0ff; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 6px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
+  a { color: var(--accent); }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p class="muted">Scheda Virtuale STM32 — simulatore della NUCLEO-F401RE nel browser, progetto scolastico non commerciale.</p>
+
+  <h2>Cosa si salva</h2>
+  <div class="card">
+    <ul>
+      <li><b>Nome utente</b> che scegli all'iscrizione.</li>
+      <li><b>Email</b>: serve solo per confermare l'account e per recuperare la password. Non è visibile agli altri utenti e non viene usata per nient'altro (niente pubblicità, niente newsletter).</li>
+      <li><b>Password</b>: non viene mai salvata in chiaro, solo in forma cifrata (hash) dal servizio di autenticazione.</li>
+      <li><b>I tuoi progetti</b>: i file del codice (.c, .h, .ioc) e i dispositivi collegati ai pin.</li>
+    </ul>
+    <p>Non ci sono statistiche, cookie di tracciamento o pubblicità. Il codice viene compilato e simulato <b>nel tuo browser</b>: non viene mandato a nessun server per la compilazione.</p>
+  </div>
+
+  <h2>Dove</h2>
+  <div class="card">
+    <ul>
+      <li><b>Online</b>: su <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a>, in un data center nell'Unione Europea. Ognuno può leggere e modificare solo i propri progetti (lo impone il database stesso).</li>
+      <li><b>Nel browser</b>: una copia dei tuoi progetti resta nel computer che usi, così il sito funziona anche senza Internet. Quando premi <i>Esci</i> e tutto è già online, la copia in quel computer viene cancellata.</li>
+      <li>Il sito (le pagine) è ospitato da GitHub Pages, che come ogni server web vede l'indirizzo IP di chi lo visita.</li>
+    </ul>
+  </div>
+
+  <h2>Come cancellare i tuoi dati</h2>
+  <div class="card">
+    <ul>
+      <li>Un progetto: selezionalo e premi <b>Elimina</b>.</li>
+      <li>Tutto: <b>account → Elimina l'account</b>. Vengono cancellati subito nome utente, email e tutti i progetti online. Prima, se vuoi, scaricali con <b>⬇ Tutti</b>.</li>
+      <li>Senza account (modalità solo nel browser) i progetti stanno solo nel tuo browser: si cancellano con Elimina o cancellando i dati del sito nelle impostazioni del browser.</li>
+    </ul>
+  </div>
+
+  <h2>Contatti</h2>
+  <p>Per domande sui dati scrivi a chi gestisce il sito: il contatto è nella pagina GitHub del progetto.</p>
+  <p><a href="./">← Torna alla scheda virtuale</a></p>
+</main>
+</body>
+</html>

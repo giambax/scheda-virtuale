@@ -1,0 +1,40 @@
+/* web.css — aggiunte della versione per il browser */
+.utente { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 0 0 8px; font-size: 13px; }
+.carica { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.btnlike { display: inline-flex; align-items: center; cursor: pointer; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line, #3334); font-size: 12px; }
+.btnlike:hover { background: var(--hover, #8881); }
+.comp-stato { min-height: 1.2em; margin-bottom: 6px; }
+#login input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 6px 8px; margin: 8px 0; }
+.progazioni { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -2px 0 8px; }
+.danger { color: var(--err, #d33); }
+#pane-code.active { display: flex; flex-direction: column; }
+.codebar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.edtabs { flex: 1; display: flex; gap: 3px; overflow-x: auto; min-width: 0; }
+.edtab { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px 3px 9px; border-radius: 6px 6px 0 0; border: 1px solid var(--border); border-bottom: none; cursor: pointer; font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; color: var(--muted); }
+.edtab.on { background: var(--accent-soft); color: var(--accent); }
+.edtab.haserr { color: var(--err); border-color: var(--err); }
+.edtab .dirty { font-style: normal; font-size: 10px; }
+.edtab .x { font-weight: normal; padding: 0 3px; border-radius: 3px; }
+.edtab .x:hover { background: var(--border); }
+#edopen { max-width: 140px; font-size: 12px; }
+.cmhost { flex: 1; min-height: 300px; overflow: hidden; }
+.scegli-lista { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; margin: 8px 0 12px; }
+.sync-stato { margin: -4px 0 8px; cursor: pointer; color: var(--muted); }
+.sync-stato.offline { color: var(--warn, #c80); }
+.sync-stato.errore, .sync-stato.sessione { color: var(--err, #d33); }
+#account .riga + .riga { margin-top: 6px; }
+.accesso { width: min(420px, 92vw); }
+.acc-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.acc-head h2 { margin: 0; }
+.acc-tabs { display: flex; gap: 14px; }
+.acc-tabs a { color: var(--muted); text-decoration: none; padding-bottom: 3px; }
+.acc-tabs a.on { color: var(--accent); border-bottom: 2px solid var(--accent); }
+.accesso label, #account label { display: block; margin: 8px 0; font-size: 13px; }
+.accesso input, #account input { width: 100%; box-sizing: border-box; font-size: 15px; padding: 6px 8px; margin-top: 3px; }
+.acc-msg { min-height: 1.2em; font-size: 13px; }
+.acc-msg.err { color: var(--err, #d33); }
+.acc-msg.ok { color: var(--ok, #2a7); }
+#account .riga { display: flex; gap: 6px; align-items: center; }
+#account .riga input { margin: 0; }
+.piede { position: fixed; right: 12px; bottom: 6px; font-size: 11px; color: var(--muted); }
+.piede a { color: inherit; }

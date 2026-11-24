@@ -3,13 +3,14 @@
 // Va anche senza account e offline. Funziona anche in Node (strumenti/prova-link.mjs).
 //
 // Link:  …/public/#progetto=<dati>   oppure   …/public/#esercizio=<dati>
-// Dati:  JSON { v: 1, nome, files: { "Core/Src/main.c": "testo", … }, devices, canali,
+// Dati:  JSON { v: 1, nome, files: { "Core/Src/main.c": "testo", … }, devices, canali, breadboard?,
 //               esercizio?: { titolo, testo, sola: ["Core/Inc/main.h", …] } }
 //
 // Il contenuto di un link è un DATO scritto da chiunque: qui si controlla tutto (dimensioni,
 // nomi dei file, tipi) e niente di quello che arriva viene mai usato come HTML.
 import { deflateSync, Inflate, strToU8, strFromU8 } from '../vendor/fflate/esm/browser.js';
 import { parseCproject } from './build.js';
+import { pulisciBreadboard } from './circuito.js';
 
 export const LINK_MAX = 400000;          // caratteri dopo # che si accettano
 const DATI_MAX = 3 * 1024 * 1024;        // JSON scompresso (contro gli "zip bomb")
@@ -55,6 +56,7 @@ export function creaLink(base, p) {
   }
   const dati = { v: 1, nome: p.nome, files, devices: Array.isArray(p.devices) ? p.devices : null };
   if (Array.isArray(p.canali) && p.canali.length) dati.canali = p.canali;
+  if (p.breadboard && Array.isArray(p.breadboard.comps) && (p.breadboard.comps.length || p.breadboard.wires.length)) dati.breadboard = pulisciBreadboard(p.breadboard);
   if (p.esercizio) dati.esercizio = { titolo: p.esercizio.titolo, testo: p.esercizio.testo, sola: (p.esercizio.sola || []).filter(r => r in files) };
   const z = b64url(deflateSync(strToU8(JSON.stringify(dati)), { level: 9 }));
   const url = base.replace(/#.*$/, '') + '#' + (p.esercizio ? 'esercizio' : 'progetto') + '=' + z;
@@ -96,6 +98,7 @@ export function leggiLink(hash) {
     devices: Array.isArray(d.devices) ? d.devices : null,
     canali: Array.isArray(d.canali) ? d.canali.slice(0, 16).map(c => typeof c === 'string' && PIN.test(c) ? c : '') : null,
     esercizio: null,
+    breadboard: d.breadboard && typeof d.breadboard === 'object' ? pulisciBreadboard(d.breadboard) : null,
   };
   if (d.esercizio && typeof d.esercizio === 'object') out.esercizio = esercizioPulito(d.esercizio, files);
   return out;

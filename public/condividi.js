@@ -84,7 +84,7 @@ async function apri(esercizio) {
   $('#cond-titolo').textContent = esercizio ? 'Crea un esercizio' : 'Condividi con un link';
   $('#cond-spiega').textContent = esercizio
     ? `Da «${base.nome}»: chi apre il link vede la consegna accanto al codice e lavora su una sua copia (anche senza account).`
-    : `Nel link c'è una copia di «${base.nome}» (file, dispositivi collegati, canali dei Segnali). Chi lo apre la prova e può salvarsela; il tuo progetto non cambia. Il progetto viaggia dentro il link: non passa da nessun server.`;
+    : `Nel link c'è una copia di «${base.nome}» (file, dispositivi collegati, breadboard, canali dei Segnali). Chi lo apre la prova e può salvarsela; il tuo progetto non cambia. Il progetto viaggia dentro il link: non passa da nessun server.`;
   $('#cond-es').hidden = !esercizio;
   $('#cond-out').hidden = true;
   if (esercizio) {

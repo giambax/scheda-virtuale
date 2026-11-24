@@ -14,6 +14,7 @@ import * as CFG from './config.js';
 import { supabaseRemote, fintoRemote } from './remote.js';
 import { sincronizza } from './sync.js';
 import { leggiLink, esercizioPulito } from './link.js';
+import { pulisciBreadboard } from './circuito.js';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -149,6 +150,12 @@ function esercizioOf(rec) {
   const f = rec.files['.esercizio.json'];
   if (!f) return null;
   try { return esercizioPulito(JSON.parse(dec.decode(f)), rec.files); } catch { return null; }
+}
+// circuito della breadboard salvato nel progetto, già controllato (vedi circuito.js), o null
+function breadboardOf(rec) {
+  const f = rec.files['.breadboard.json'];
+  if (!f) return null;
+  try { const b = pulisciBreadboard(JSON.parse(dec.decode(f))); return b.comps.length || b.wires.length ? b : null; } catch { return null; }
 }
 function info(rec) {
   const ioc = iocOf(rec);
@@ -573,14 +580,16 @@ window.SV = {
   // --- Condividi / Esercizio (condividi.js) ---
   get anteprima() { return ANTEPRIMA ? { nome: LINK.nome, tipo: LINK.tipo } : null; },
   async esercizio(nome) { const rec = await dbGet(nome); return rec ? esercizioOf(rec) : null; },
+  // circuito della breadboard (file ".breadboard.json" del progetto, breadboard.js) o null
+  async breadboard(nome) { const rec = await dbGet(nome); return rec ? breadboardOf(rec) : null; },
   // quello che va nel link: file come testo, dispositivi, canali dell'analizzatore, consegna
   async perLink(nome) {
     const rec = await dbGet(nome);
     const files = {};
-    for (const [k, v] of Object.entries(rec.files)) if (k !== '.esercizio.json') files[k] = dec.decode(v);
+    for (const [k, v] of Object.entries(rec.files)) if (k !== '.esercizio.json' && k !== '.breadboard.json') files[k] = dec.decode(v);
     let canali = null;
     try { canali = JSON.parse(localStorage.getItem(laKey(nome))); } catch {}
-    return { nome, files, devices: Array.isArray(rec.devices) ? rec.devices : null, canali: Array.isArray(canali) ? canali : null, esercizio: esercizioOf(rec) };
+    return { nome, files, devices: Array.isArray(rec.devices) ? rec.devices : null, canali: Array.isArray(canali) ? canali : null, esercizio: esercizioOf(rec), breadboard: breadboardOf(rec) };
   },
   // anteprima → "Salvalo nei miei progetti": si ricarica la pagina normale, che la copia (vedi in fondo)
   salvaAnteprima() {
@@ -596,6 +605,7 @@ async function preparaAnteprima() {
   const enc = new TextEncoder(), files = {};
   for (const [k, v] of Object.entries(LINK.files)) files[k] = enc.encode(v);
   if (LINK.esercizio) files['.esercizio.json'] = enc.encode(JSON.stringify(LINK.esercizio));
+  if (LINK.breadboard) files['.breadboard.json'] = enc.encode(JSON.stringify(LINK.breadboard));
   // via le anteprime di altri link aperte più di un giorno fa
   const vecchie = await tx('readonly', s => s.getAll(IDBKeyRange.bound(['link:', ''], ['link:\uffff', '\uffff'])));
   for (const r of vecchie) if (r.utente !== user && Date.now() - (r.modified || 0) > 86400000) await tx('readwrite', s => s.delete([r.utente, r.nome]));
@@ -648,6 +658,7 @@ const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
 for (const s of ['devices.js', 'app.js', 'analizzatore.js', 'web-ui.js']) await loadScript(s);
 await import('./editor.js');
 await import('./condividi.js');
+await import('./breadboard.js');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (ANTEPRIMA || salvato) {
   await loadProjects();

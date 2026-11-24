@@ -83,7 +83,7 @@ if ('serviceWorker' in navigator) {
       <span class="muted small">Progetto:</span>
       <button id="btn-rinomina" class="ghost small">Rinomina</button>
       <button id="btn-esporta1" class="ghost small" title="Scarica solo questo progetto (.zip)">⬇ Zip</button>
-      <button id="btn-condividi" class="ghost small" title="Un link con una copia di questo progetto (file, dispositivi, canali dei Segnali): chi lo apre la prova e può salvarsela. Il tuo progetto non cambia.">🔗 Condividi</button>
+      <button id="btn-condividi" class="ghost small" title="Un link con una copia di questo progetto (file, dispositivi, breadboard, canali dei Segnali): chi lo apre la prova e può salvarsela. Il tuo progetto non cambia.">🔗 Condividi</button>
       <button id="btn-esercizio" class="ghost small" title="Un link «esercizio»: titolo, consegna e questo progetto come partenza (anche con file in sola lettura)">📝 Esercizio</button>
       <button id="btn-elimina" class="ghost small danger">Elimina</button>
     </div>
@@ -116,6 +116,7 @@ if ('serviceWorker' in navigator) {
       <button class="tab" data-tab="vars" hidden>Variabili</button>
       <button class="tab" data-tab="serial">Seriale <span id="serial-dot" class="dot" hidden></span></button>
       <button class="tab" data-tab="scope">Segnali</button>
+      <button class="tab" data-tab="breadboard">Breadboard</button>
       <button class="tab" data-tab="code">Codice</button>
       <button class="tab" data-tab="log">Registro <span id="log-count" class="count" hidden>0</span></button>
     </nav>
@@ -176,6 +177,8 @@ if ('serviceWorker' in navigator) {
       <div id="code" hidden></div>
       <div id="cm" class="cmhost"></div>
     </div>
+
+    <div class="pane" id="pane-breadboard"></div>
 
     <div class="pane" id="pane-log">
       <div id="log" class="log"></div>

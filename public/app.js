@@ -320,12 +320,14 @@ function onSimLine(line) {
   switch (line[0]) {
     case 'M': {
       const p = +a[1], h = x => parseInt(x, 16) >>> 0;
+      if (window.bbOnM) bbOnM();
       S.ports[p] = Object.assign(S.ports[p] || { level: 0 }, { moder: h(a[2]), pupdr: h(a[3]), otyper: h(a[4]), afrl: h(a[5]), afrh: h(a[6]), exti: h(a[7]), rt: h(a[8]), ft: h(a[9]) });
       S.dirty = true;
       break;
     }
     case 'C': {
       const ms = +a[1], p = +a[2], lv = parseInt(a[3], 16);
+      if (window.bbOnC) bbOnC(ms);   // breadboard: lo stato di prima è durato fino a ms
       S.ports[p] = S.ports[p] || { moder: 0, pupdr: 0, otyper: 0, afrl: 0, afrh: 0, exti: 0, rt: 0, ft: 0 };
       S.ports[p].level = lv;
       if (window.laOnC) laOnC(ms, p, lv);
@@ -335,6 +337,7 @@ function onSimLine(line) {
     }
     case 'W': {
       const k = keyOf(+a[1], +a[2]);
+      if (window.bbOnM) bbOnM();
       S.pwm[k] = { duty: +a[3], freq: +a[4] };
       if (window.laOnW) laOnW(k, +a[3], +(a[5] ?? a[4]));
       S.dirty = true;
@@ -726,6 +729,7 @@ function resetSimState() {
   serialBaudCheck();
   if (window.dbgOnReset) dbgOnReset();
   devOnReset();
+  if (window.bbReset) bbReset();
   S.dirty = true;
 }
 async function doRun(debug) {
@@ -805,6 +809,7 @@ function connect() {
 function frame() {
   if (S.dirty) { S.dirty = false; renderPins(); renderBoard(); renderDevices(); }
   devFrame();
+  if (window.bbFrame) bbFrame();
   if (window.laDraw && $('#pane-scope').classList.contains('active')) laDraw();
   if (window.dbgFrame) dbgFrame();
   requestAnimationFrame(frame);

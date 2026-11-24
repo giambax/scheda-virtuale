@@ -46,7 +46,7 @@ function setupAccount() {
     else if (S.selId && r.scaricati.includes(S.selId) && !(window.SVeditor && SVeditor.isDirty())) selectProject(S.selId, true);
   });
 
-  const d = $('#account'), m = t => { $('#acc-io-msg').textContent = t; };
+  const d = $('#account'), m = t => { $('#acc-io-msg').textContent = t; $('#acc-io-msg').className = 'acc-msg'; };
   async function fillOld() {
     const old = await SV.oldUsers();
     const el = $('#acc-vecchi');
@@ -61,18 +61,58 @@ function setupAccount() {
       SV.syncNow();
     }));
   }
-  $('#btn-utente').addEventListener('click', () => {
+  // modi di entrare: password sì/no, Google/GitHub collegati (collega / scollega)
+  const NOMI = { google: 'Google', github: 'GitHub' };
+  async function fillMethods() {
+    const box = $('#acc-metodi-box'), el = $('#acc-metodi');
+    let x;
+    try { x = await R.methods(); } catch (e) { box.hidden = !(R.providers || []).length; el.textContent = 'Non riesco a leggerli adesso: ' + e.message; return; }
+    const linked = Object.fromEntries(x.providers.map(p => [p.provider, p]));
+    const elenco = [...new Set([...(R.providers || []), ...Object.keys(linked)])];
+    $('#acc-pw-titolo').textContent = x.password ? 'Cambia password' : 'Imposta una password';
+    $('#acc-pw-spiega').hidden = x.password;
+    $('#btn-cambia-pw').textContent = x.password ? 'Cambia' : 'Imposta';
+    box.hidden = !elenco.length;
+    el.innerHTML = `<div class="riga"><span>Nome utente (o email) e password</span><b>${x.password ? 'sì' : 'no'}</b></div>` +
+      elenco.map(p => linked[p]
+        ? `<div class="riga"><span>${NOMI[p] || esc(p)}: collegato${linked[p].email ? ' (' + esc(linked[p].email) + ')' : ''}</span><button type="button" data-scollega="${p}" ${x.identita < 2 ? 'disabled title="È l\'unico modo con cui entri"' : ''}>Scollega</button></div>`
+        : `<div class="riga"><span>${NOMI[p] || esc(p)}: non collegato</span><button type="button" data-collega="${p}">Collega</button></div>`).join('');
+    el.querySelectorAll('[data-collega]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true;
+      if (window.SVeditor && SVeditor.isDirty()) await SVeditor.saveAll();
+      try { await R.link(b.dataset.collega); } catch (e) { m(e.message); b.disabled = false; }   // se va, si torna qui dal provider
+    }));
+    el.querySelectorAll('[data-scollega]').forEach(b => b.addEventListener('click', async () => {
+      const p = b.dataset.scollega;
+      if (!confirm(`Scollegare ${NOMI[p] || p}? Non potrai più entrare con quell'account (puoi ricollegarlo quando vuoi).`)) return;
+      b.disabled = true;
+      try { await R.unlink(p); m(`${NOMI[p] || p} scollegato.`); } catch (e) { m(e.message); }
+      fillMethods();
+    }));
+  }
+  function openAccount(avviso) {
     $('#acc-io-nome').textContent = acc.username;
     $('#acc-io-email').textContent = acc.email || '';
-    m('');
+    m(avviso ? avviso.testo : '');
+    $('#acc-io-msg').className = 'acc-msg' + (avviso ? (avviso.ok ? ' ok' : ' err') : '');
     fillOld();
-    d.showModal();
-  });
+    fillMethods();
+    if (!d.open) d.showModal();
+  }
+  $('#btn-utente').addEventListener('click', () => openAccount());
+  // di ritorno da Google/GitHub (collega account, o errore) già dentro: il messaggio qui
+  if (acc.avviso) openAccount(acc.avviso);
   $('#btn-cambia-pw').addEventListener('click', async () => {
     const pw = $('#acc-cambia-pw').value;
     if (pw.length < 8) return m('La password deve avere almeno 8 caratteri.');
     if (pw !== $('#acc-cambia-pw2').value) return m('Le due password non sono uguali.');
-    try { await R.updatePassword(pw); $('#acc-cambia-pw').value = $('#acc-cambia-pw2').value = ''; m('Password cambiata.'); } catch (e) { m(e.message); }
+    const nuova = $('#btn-cambia-pw').textContent === 'Imposta';
+    try {
+      await R.updatePassword(pw);
+      $('#acc-cambia-pw').value = $('#acc-cambia-pw2').value = '';
+      m(nuova ? `Password impostata: ora puoi entrare anche con «${acc.username}» (o l'email) e questa password.` : 'Password cambiata.');
+      fillMethods();
+    } catch (e) { m(e.message); }
   });
   $('#btn-esci').addEventListener('click', async () => {
     if (window.SVeditor && SVeditor.isDirty()) await SVeditor.saveAll();

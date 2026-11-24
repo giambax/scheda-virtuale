@@ -564,7 +564,7 @@ function loadScript(src) {
 }
 if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
-  remote = CFG.BACKEND === 'finto' ? fintoRemote() : await supabaseRemote(CFG);
+  remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
   const { accedi } = await import('./auth.js');
   account = await accedi(remote);
   user = 'account:' + account.id;

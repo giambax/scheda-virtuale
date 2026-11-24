@@ -38,3 +38,24 @@
 #account .riga input { margin: 0; }
 .piede { position: fixed; right: 12px; bottom: 6px; font-size: 11px; color: var(--muted); }
 .piede a { color: inherit; }
+/* Accesso con Google / GitHub — colori dalle linee guida dei due marchi (Google: chiaro/scuro) */
+.acc-social { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
+.acc-social[hidden], .social[hidden] { display: none; }
+.social { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 40px; padding: 0 12px; border-radius: 6px; font: 500 14px/1 Roboto, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; cursor: pointer; }
+.social svg { flex: none; }
+.social-google { background: #fff; color: #1f1f1f; border: 1px solid #747775; }
+.social-google:hover:not(:disabled) { background: #f2f2f2; }
+.social-github { background: #24292f; color: #fff; border: 1px solid #24292f; }
+.social-github:hover:not(:disabled) { background: #32383f; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .social-google { background: #131314; color: #e3e3e3; border-color: #8e918f; }
+  :root:not([data-theme="light"]) .social-google:hover:not(:disabled) { background: #1f1f20; }
+  :root:not([data-theme="light"]) .social-github { border-color: #57606a; }
+}
+:root[data-theme="dark"] .social-google { background: #131314; color: #e3e3e3; border-color: #8e918f; }
+:root[data-theme="dark"] .social-github { border-color: #57606a; }
+.acc-oppure { display: flex; align-items: center; gap: 8px; margin-top: 4px; text-align: center; }
+.acc-oppure::before, .acc-oppure::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.acc-metodi { display: flex; flex-direction: column; gap: 6px; }
+.acc-metodi .riga { justify-content: space-between; }
+.acc-tabs[hidden] { display: none; }

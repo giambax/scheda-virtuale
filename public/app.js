@@ -21,11 +21,11 @@ const STATUS_TXT = { idle: 'Pronta', building: 'Compilazione…', running: 'In e
 
 const S = {
   projects: [], selId: null, proj: null, files: [], ioc: { pins: {} }, curFile: null,
-  server: {}, ports: {}, pwm: {}, adc: {}, adcVal: {}, hist: {}, pwmHist: {},
+  server: {}, ports: {}, pwm: {}, adc: {}, adcVal: {},
   ms: 0, tick: 0, primask: 0, clocks: null,
   irq: {}, irqRate: {}, irqLast: null,
   uart: {}, uartSel: '2', serialChunks: [],
-  inputs: {}, warnCount: 0, frozenAt: null, span: 5000,
+  inputs: {}, warnCount: 0,
   pinsKey: '', dirty: true,
 };
 devInitState();
@@ -328,9 +328,7 @@ function onSimLine(line) {
       const ms = +a[1], p = +a[2], lv = parseInt(a[3], 16);
       S.ports[p] = S.ports[p] || { moder: 0, pupdr: 0, otyper: 0, afrl: 0, afrh: 0, exti: 0, rt: 0, ft: 0 };
       S.ports[p].level = lv;
-      const h = S.hist[p] = S.hist[p] || [];
-      h.push([ms, lv]);
-      if (h.length > 40000) h.splice(0, 10000);
+      if (window.laOnC) laOnC(ms, p, lv);
       if (ms > S.ms) S.ms = ms;
       S.dirty = true;
       break;
@@ -338,10 +336,10 @@ function onSimLine(line) {
     case 'W': {
       const k = keyOf(+a[1], +a[2]);
       S.pwm[k] = { duty: +a[3], freq: +a[4] };
-      (S.pwmHist[k] = S.pwmHist[k] || []).push([S.ms, +a[3]]);
       S.dirty = true;
       break;
     }
+    case 'G': if (window.laOnG) laOnG(+a[1], +a[2], parseInt(a[3], 16)); break;
     case 'K': S.clocks = a.slice(1).map(Number); renderClocks(); break;
     case 'A': {
       const ch = a[1], p = +a[2], pin = +a[3];
@@ -447,87 +445,7 @@ function redrawSerial() {
   term.scrollTop = term.scrollHeight;
 }
 
-// ------------------------------------------------------------------
-// Analizzatore di segnali
-function drawScope() {
-  const cv = $('#scope');
-  if (!cv.offsetParent) return;
-  const dpr = window.devicePixelRatio || 1;
-  const W = cv.clientWidth, H = cv.clientHeight;
-  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const css = getComputedStyle(document.documentElement);
-  const col = n => css.getPropertyValue(n).trim();
-  ctx.fillStyle = col('--code-bg');
-  ctx.fillRect(0, 0, W, H);
-  const pins = activePins().filter(i => i.mode !== 3 && i.adcCh === undefined && !/USART/.test(i.func));
-  const end = S.frozenAt ?? S.ms, start = end - S.span;
-  const L = 118, R = 12, top = 22;
-  const rowH = Math.max(34, Math.min(60, (H - top - 24) / Math.max(1, pins.length)));
-  const x = t => L + (t - start) / S.span * (W - L - R);
-  // griglia
-  ctx.strokeStyle = col('--border');
-  ctx.fillStyle = col('--muted');
-  ctx.font = '11px ui-monospace, Menlo, monospace';
-  ctx.lineWidth = 1;
-  const stepMs = S.span <= 1000 ? 100 : S.span <= 5000 ? 500 : S.span <= 10000 ? 1000 : 5000;
-  for (let t = Math.ceil(start / stepMs) * stepMs; t <= end; t += stepMs) {
-    const xx = Math.round(x(t)) + .5;
-    ctx.beginPath(); ctx.moveTo(xx, top - 6); ctx.lineTo(xx, H - 4); ctx.stroke();
-    if (t >= 0) ctx.fillText((t / 1000).toFixed(stepMs < 1000 ? 1 : 0) + ' s', xx + 3, 12);
-  }
-  if (!pins.length) { ctx.fillText('Nessun pin digitale in uso.', L, top + 20); return; }
-  pins.forEach((i, r) => {
-    const y0 = top + r * rowH, hi = y0 + 8, lo = y0 + rowH - 10;
-    ctx.fillStyle = col('--text');
-    ctx.font = '600 12px ui-monospace, Menlo, monospace';
-    ctx.fillText(i.key, 10, (hi + lo) / 2 + 4);
-    ctx.fillStyle = col('--muted');
-    ctx.font = '10px system-ui';
-    const sub = (ARD[i.key] ? ARD[i.key] + ' ' : '') + (i.label || (i.mode === 0 ? 'ingresso' : i.mode === 1 ? 'uscita' : i.func));
-    ctx.fillText(sub.slice(0, 16), 10, (hi + lo) / 2 + 17);
-    const h = S.hist[i.p] || [];
-    const color = i.mode === 0 ? col('--accent') : i.key === 'PA5' ? '#22c55e' : col('--hi');
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    // livello all'inizio della finestra
-    let k = h.length - 1;
-    while (k > 0 && h[k][0] > start) k--;
-    let lv = h.length ? (h[Math.max(0, k)][1] >>> i.pin) & 1 : i.level;
-    if (h.length && h[0][0] > start) lv = 0;
-    ctx.beginPath();
-    let cx = L;
-    ctx.moveTo(cx, lv ? hi : lo);
-    for (let j = Math.max(0, k); j < h.length; j++) {
-      const [t, v] = h[j];
-      if (t < start) continue;
-      if (t > end) break;
-      const nl = (v >>> i.pin) & 1;
-      if (nl !== lv) { const xx = x(t); ctx.lineTo(xx, lv ? hi : lo); ctx.lineTo(xx, nl ? hi : lo); lv = nl; }
-    }
-    ctx.lineTo(x(end), lv ? hi : lo);
-    ctx.stroke();
-    // PWM veloce: banda con il duty
-    const ph = S.pwmHist[i.key];
-    if (ph && ph.length) {
-      for (let j = 0; j < ph.length; j++) {
-        const [t, d] = ph[j];
-        const tEnd = j + 1 < ph.length ? ph[j + 1][0] : end;
-        if (d < 0 || tEnd < start) continue;
-        const xa = x(Math.max(t, start)), xb = x(tEnd);
-        ctx.fillStyle = color + '33';
-        ctx.fillRect(xa, hi, xb - xa, lo - hi);
-        ctx.fillStyle = color;
-        ctx.font = '600 10px ui-monospace, Menlo, monospace';
-        if (xb - xa > 60) ctx.fillText(`PWM ${(d / 10).toFixed(0)}%`, xa + 4, hi + 12);
-      }
-    }
-    ctx.strokeStyle = col('--border');
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(L, y0 + rowH - .5); ctx.lineTo(W - R, y0 + rowH - .5); ctx.stroke();
-  });
-}
+// Analizzatore logico (scheda "Segnali"): analizzatore.js
 
 // ------------------------------------------------------------------
 // Codice
@@ -758,11 +676,11 @@ function showTab(name) {
   try { localStorage.setItem('sv-tab', name); } catch {}
 }
 function resetSimState() {
-  Object.assign(S, { ports: {}, pwm: {}, adc: {}, hist: {}, pwmHist: {}, ms: 0, tick: 0, primask: 0, irq: {}, irqRate: {}, irqLast: null, uart: {}, serialChunks: [], pinsKey: '', frozenAt: null, pfNoted: false });
+  Object.assign(S, { ports: {}, pwm: {}, adc: {}, ms: 0, tick: 0, primask: 0, irq: {}, irqRate: {}, irqLast: null, uart: {}, serialChunks: [], pinsKey: '', pfNoted: false });
   for (const k of Object.keys(S.inputs)) { if (!S.inputs[k].latched) delete S.inputs[k]; }
   $('#serial').innerHTML = '';
   $('#irqs').innerHTML = '<span class="muted small">Nessun interrupt finora.</span>';
-  $('#scope-freeze').textContent = 'Blocca';
+  if (window.laReset) laReset();
   if (window.dbgOnReset) dbgOnReset();
   devOnReset();
   S.dirty = true;
@@ -799,14 +717,6 @@ function wire() {
     const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
     cmd(`R ${S.uartSel} ${hex}`);
     inp.value = '';
-  });
-  $$('#scope-span button').forEach(b => b.addEventListener('click', () => {
-    S.span = +b.dataset.span;
-    $$('#scope-span button').forEach(x => x.classList.toggle('on', x === b));
-  }));
-  $('#scope-freeze').addEventListener('click', () => {
-    S.frozenAt = S.frozenAt === null ? S.ms : null;
-    $('#scope-freeze').textContent = S.frozenAt === null ? 'Blocca' : 'Riprendi';
   });
   try { const t = localStorage.getItem('sv-tab'); if (t) showTab(t); } catch {}
 }
@@ -848,7 +758,7 @@ function connect() {
 function frame() {
   if (S.dirty) { S.dirty = false; renderPins(); renderBoard(); renderDevices(); }
   devFrame();
-  if ($('#pane-scope').classList.contains('active')) drawScope();
+  if (window.laDraw && $('#pane-scope').classList.contains('active')) laDraw();
   if (window.dbgFrame) dbgFrame();
   requestAnimationFrame(frame);
 }

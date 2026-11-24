@@ -784,13 +784,30 @@ GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
 {
   return (GPIOx->IDR & GPIO_Pin) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
+/* analizzatore logico: ogni scrittura con HAL_GPIO_WritePin/TogglePin esce subito con il
+ * tempo simulato in µs ("G us porta ODR"), non solo a fine millisecondo come "C".
+ * Al massimo G_MAX_MS righe per ms: un ciclo che commuta a raffica non intasa la pagina
+ * (i cambi in più si vedono comunque dalla "C" del millisecondo). */
+#define G_MAX_MS 24
+static void gpio_fine_emit(GPIO_TypeDef *g)
+{
+  static uint64_t g_ms = (uint64_t)-1;
+  static int g_n;
+  int p = -1;
+  for (int i = 0; i < 8; i++) if (gp[i] == g) p = i;
+  if (p < 0) return;
+  uint64_t now = atomic_load(&sim_ms);
+  if (now != g_ms) { g_ms = now; g_n = 0; }
+  if (++g_n > G_MAX_MS) return;
+  emit("G %.0f %d %x", dev_now() * 1000.0, p, (unsigned)(g->ODR & 0xFFFFu));
+}
 void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState)
 {
   uint32_t o = GPIOx->ODR, n = PinState != GPIO_PIN_RESET ? (o | GPIO_Pin) : (o & ~(uint32_t)GPIO_Pin);
   GPIOx->ODR = n;
-  if (n != o) dev_gpio_changed(GPIOx, n ^ o);
+  if (n != o) { gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, n ^ o); }
 }
-void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { GPIOx->ODR ^= GPIO_Pin; dev_gpio_changed(GPIOx, GPIO_Pin); }
+void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { GPIOx->ODR ^= GPIO_Pin; gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, GPIO_Pin); }
 HAL_StatusTypeDef HAL_GPIO_LockPin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { (void)GPIOx; (void)GPIO_Pin; return HAL_OK; }
 
 __weak void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) { (void)GPIO_Pin; }

@@ -579,7 +579,7 @@ if (ACCOUNT) {
     if (n) { window.SV.setUser(n); res(); }
   }));
 }
-for (const s of ['devices.js', 'app.js', 'web-ui.js']) await loadScript(s);
+for (const s of ['devices.js', 'app.js', 'analizzatore.js', 'web-ui.js']) await loadScript(s);
 await import('./editor.js');
 if (ACCOUNT) {
   syncNow();

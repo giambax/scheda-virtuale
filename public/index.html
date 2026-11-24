@@ -137,13 +137,15 @@ if ('serviceWorker' in navigator) {
 
     <div class="pane" id="pane-scope">
       <div class="scope-head">
-        <div class="seg" id="scope-span">
-          <button data-span="1000">1 s</button><button data-span="5000" class="on">5 s</button><button data-span="10000">10 s</button><button data-span="30000">30 s</button>
-        </div>
-        <button id="scope-freeze" class="ghost small">Blocca</button>
-        <span class="muted small">livello logico dei pin nel tempo simulato</span>
+        <button id="la-pausa" class="small">❚❚ Pausa</button>
+        <div class="seg"><button id="la-zin" title="Zoom avanti (anche con la rotella)">+</button><button id="la-zout" title="Zoom indietro">−</button><button id="la-tutto" title="Tutto quello che è stato registrato">Tutto</button></div>
+        <label class="small la-trig">Trigger <select id="la-trig-ch" title="Si ferma da solo al primo fronte di questo canale"></select>
+          <select id="la-trig-fr"><option value="1">↑ salita</option><option value="0">↓ discesa</option></select></label>
+        <button id="la-togli" class="ghost small" title="Togli i cursori (anche doppio clic)">Togli cursori</button>
       </div>
+      <div id="la-canali" class="la-canali"></div>
       <canvas id="scope"></canvas>
+      <div id="la-misura" class="la-misura small"></div>
     </div>
 
     <div class="pane" id="pane-code">

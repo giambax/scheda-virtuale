@@ -4,7 +4,7 @@
 // Con Google/GitHub (config.js PROVIDER_ATTIVI): pulsanti "Continua con…", e al primo accesso la
 // scelta del nome utente (pane "nome"). Se si torna da Google/GitHub già dentro (collega account,
 // o errore), il messaggio va in u.avviso e lo mostra web-ui.js nella finestra "Il tuo account".
-import { PROVIDER } from './remote.js?v=2026-11-24e';
+import { PROVIDER } from './remote.js?v=2026-11-24g';
 const $ = s => document.querySelector(s);
 let providers = [];
 
@@ -12,6 +12,7 @@ function pane(name) {
   for (const p of document.querySelectorAll('#accesso [data-pane]')) p.hidden = p.dataset.pane !== name;
   $('#acc-social').hidden = !providers.length || !['entra', 'iscriviti'].includes(name);
   $('#accesso .acc-tabs').hidden = name === 'nome';
+  const os = document.querySelector('#accesso .acc-ospite'); if (os) os.hidden = !['entra', 'iscriviti', 'dimenticata'].includes(name);
   for (const t of document.querySelectorAll('#accesso [data-vai]')) t.classList.toggle('on', t.dataset.vai === name);
   $('#acc-msg').textContent = '';
   $('#acc-msg').className = 'acc-msg';
@@ -95,9 +96,14 @@ export async function accedi(remote) {
   }
 
   d.showModal();
-  pane('entra');
+  // arrivati da ospite con "Crea un account" / "Entra" (ospite.js)
+  let p0 = 'entra';
+  try { p0 = sessionStorage.getItem('sv-accesso-pane') === 'iscriviti' ? 'iscriviti' : 'entra'; sessionStorage.removeItem('sv-accesso-pane'); } catch {}
+  pane(p0);
   if (remote.linkError) { history.replaceState(null, '', location.pathname + location.search); msg(remote.linkError); }
   return new Promise(res => {
+    // ospite: niente account, niente salvataggi (local-server.js); la scelta non si ricorda
+    $('#acc-ospite').onclick = ev => { ev.preventDefault(); d.close(); res({ ospite: true }); };
     remote.onRecovery(async () => { await askNewPassword(remote); res(done(await conNome(await remote.session()))); });
     $('#acc-entra').onsubmit = ev => {
       ev.preventDefault();

@@ -4,7 +4,7 @@
 // Chi è amministratore lo decide il database (is_admin(), legato all'ID): il pulsante si vede solo
 // all'utente giamba, ma è solo una comodità, la sicurezza la fanno le regole RLS.
 // Tutto quello che scrivono gli utenti si mostra con textContent, mai come HTML.
-import { SEGN, SEGN_STATI } from './remote.js?v=2026-11-24e';
+import { SEGN, SEGN_STATI } from './remote.js?v=2026-11-24g';
 
 // versione del sito: quella nell'indirizzo di questo file (?v=…, la mette strumenti/alza-versione.sh)
 export const VERSIONE_SITO = new URL(import.meta.url).searchParams.get('v') || 'sviluppo';
@@ -43,6 +43,9 @@ async function apri() {
   caricaBozza(); contatori();
   messaggio('');
   const senza = !R() || !SV.account;
+  $('#segn-senza p').textContent = SV.ospite
+    ? 'Segnala un bug è per chi ha un account (così ti possiamo rispondere). Crea un account o entra dalla striscia in alto: i progetti che hai aperto vengono con te.'
+    : 'Per mandare una segnalazione serve un account: in questa versione del sito non ci sono gli account.';
   $('#segn-form').hidden = senza;
   $('#segn-senza').hidden = !senza;
   $('#segn-prog').disabled = !S.selId;

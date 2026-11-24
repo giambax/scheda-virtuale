@@ -493,3 +493,40 @@ kbd { font-size: 11.5px; padding: 1px 6px; border-radius: 5px; border: 1px solid
 /* i livelli sopra al disegno (nodo evidenziato, problemi, selezione, aggancio, anteprime) non devono
    prendere i clic: prima il cerchio del nodo sotto il mouse "rubava" il clic al componente */
 #bb-prob, #bb-nodo, #bb-sel, #bb-sel-aggancio, #bb-ghost { pointer-events: none; }
+
+/* pannelli degli strumenti (tappa B) */
+.bb-wrap { position: relative; }
+.strum-pan { position: absolute; z-index: 8; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); min-width: 260px; max-width: calc(100% - 24px); }
+.sp-tit { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: move; user-select: none; }
+.sp-tit b { flex: 1; font-size: 13px; }
+.sp-corpo { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.sp-corpo p { margin: 0; max-width: 520px; }
+.sp-lcd { font: 600 34px ui-monospace, Menlo, monospace; background: #b9c8a6; color: #1d2a14; border-radius: 6px; padding: 6px 12px; text-align: right; }
+.sp-lcd small { font-size: 16px; }
+.sp-lcd.rosso { background: #2b0d0d; color: #ff5a4f; font-size: 22px; }
+.sp-riga { align-self: flex-start; }
+.sp-campo { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.sp-campo input[type=number] { width: 90px; border: 1px solid var(--border); background: var(--panel); border-radius: 6px; padding: 3px 6px; color: var(--text); }
+canvas.osc { width: 560px; max-width: 100%; height: auto; border-radius: 6px; display: block; cursor: col-resize; touch-action: none; }
+.sp-osc { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; font-size: 12px; }
+.sp-osc label { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.sp-osc select, .sp-osc input { padding: 2px 4px; font-size: 12px; max-width: 90px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; }
+.cA { color: #e0b100; font-weight: 700; } .cB { color: #2aa8de; font-weight: 700; }
+.sp-cursori { min-height: 1.3em; color: var(--muted); }
+.strum-pan { max-height: calc(100% - 20px); overflow: auto; }
+.sp-corpo:has(canvas.osc) { display: grid; grid-template-columns: minmax(0, 520px) 210px; align-items: start; gap: 8px 12px; }
+.sp-corpo:has(canvas.osc) .sp-osc { grid-template-columns: 1fr; }
+.sp-corpo:has(canvas.osc) .sp-cursori { grid-column: 1 / -1; }
+@media (max-width: 900px) { .sp-corpo:has(canvas.osc) { grid-template-columns: 1fr; } }
+#bb-svg.lontano #bb-nomi-pin { display: none; }
+#bb-nomi-pin { pointer-events: none; }
+
+/* vista al centro: Breadboard | Scheda e dispositivi */
+.banco-viste { display: flex; gap: 4px; padding: 6px 10px 0; background: var(--panel); border-bottom: 1px solid var(--border); }
+.vista-btn { border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--muted); font-weight: 600; padding: 7px 16px; position: relative; top: 1px; }
+.vista-btn:hover:not(:disabled) { color: var(--text); border-color: transparent; }
+.vista-btn.on { background: var(--banco); color: var(--text); border-color: var(--border); }
+body[data-vista="breadboard"] .vista-btn.on { background: var(--panel); }
+.vista-scheda { flex: 1; min-height: 0; overflow: auto; }
+.vista-scheda .scheda-grid { grid-template-columns: minmax(300px, 520px) minmax(0, 1fr); max-width: 1300px; margin: 0 auto; padding: 16px; }
+.vista-scheda #board { max-width: 520px; }

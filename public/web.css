@@ -114,3 +114,8 @@ dialog.segn-admin:not([open]) { display: none; }
 .sa-pre { white-space: pre-wrap; font-size: 12px; max-height: 220px; overflow: auto; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px; margin: 0; }
 .sa-azioni { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 @media (max-width: 700px) { .sa-corpo { grid-template-columns: 1fr; } .sa-dett { border-left: 0; padding-left: 0; } }
+
+/* ospite (ospite.js, auth.js) */
+.acc-ospite { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
+.ospite-striscia { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 12px; background: var(--warn-soft); color: var(--warn); border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-size: 13px; }
+.ospite-striscia span { color: var(--text); }

@@ -80,7 +80,13 @@ export const TIPI = {
   encoder: { nome: 'Encoder KY-040', pref: 'ENC' },
   servo: { nome: 'Servo SG90', pref: 'M' },
   motor: { nome: 'Motore DC', pref: 'M' },
+  // strumenti (tappa B, come in Multisim): si mettono sul banco e si collegano con i fili
+  dmm: { nome: 'Multimetro', pref: 'XMM' },
+  scope: { nome: 'Oscilloscopio', pref: 'XSC' },
+  gen: { nome: 'Generatore di funzioni', pref: 'XFG' },
+  psu: { nome: 'Alimentatore da banco', pref: 'PS' },
 };
+export const STRUMENTI = ['dmm', 'scope', 'gen', 'psu'];
 // opzioni di ogni tipo: [nome, valore iniziale, min, max] (numeri) o [nome, iniziale, [valori]] (scelta)
 export const OPZIONI = {
   res: [['r', 330, 1, 1e7], ['span', 4, 2, 10]],
@@ -98,7 +104,16 @@ export const OPZIONI = {
   encoder: [],
   servo: [],
   motor: [],
+  dmm: [['modo', 'V', ['V', 'A', 'Ω']], ['ac', 0, [0, 1]]],
+  scope: [['va', 1, [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]], ['vb', 1, [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]],
+    ['sdiv', 0.001, [1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5]],
+    ['trig', 'A', ['A', 'B']], ['fronte', 1, [0, 1]], ['livello', 1.5, -20, 20], ['modoT', 'auto', ['auto', 'normale', 'singolo']],
+    ['ya', 0, -10, 10], ['yb', -2, -10, 10]],
+  gen: [['forma', 'sin', ['sin', 'quadra', 'tri']], ['f', 1000, 0.1, 20000], ['amp', 1, 0, 10], ['off', 0, -10, 10]],
+  psu: [['v', 5, 0, 12], ['ilim', 0.5, 0.001, 3]],
 };
+export const GEN_R = 50;          // resistenza d'uscita del generatore (come quelli da banco)
+export const GEN_FMAX = 20000;    // oltre la simulazione nel tempo non tiene il passo (vedi breadboard.js)
 export const LED_COL = { red: ['#ff3b30', 1.8, 'rosso'], green: ['#2fd470', 2.0, 'verde'], yellow: ['#ffd60a', 1.9, 'giallo'], blue: ['#4c8dff', 2.8, 'blu'], white: ['#f5f5f5', 2.8, 'bianco'] };
 // pinout dei display (numero del piedino → funzione), come nei datasheet
 const P5161 = { 1: 'e', 2: 'd', 3: 'com', 4: 'c', 5: 'dp', 6: 'b', 7: 'a', 8: 'com', 9: 'f', 10: 'g' };
@@ -120,6 +135,10 @@ export function piedini(c) {
     case 'pot': return [['1', 0, 0], ['W', 2, 0], ['3', 4, 0]];
     case 'encoder': return [['CLK', 0, 0], ['DT', 1, 0], ['SW', 2, 0], ['+', 3, 0], ['GND', 4, 0]];
     case 'servo': return [['GND', 0, 0], ['+', 1, 0], ['S', 2, 0]];
+    case 'dmm': return [['COM', 0, 0], ['V', 3, 0], ['A', 6, 0]];
+    case 'scope': return [['A', 0, 0], ['B', 4, 0], ['GND', 8, 0]];
+    case 'gen': return [['+', 0, 0], ['COM', 3, 0]];
+    case 'psu': return [['+', 0, 0], ['-', 3, 0]];
     case 'seg7': {   // file da 5, a 0,6": in basso 1…5 da sinistra, in alto 10…6
       const out = [];
       for (let i = 0; i < 5; i++) out.push([String(1 + i), i, 6], [String(10 - i), i, 0]);
@@ -257,6 +276,16 @@ export function elementi(net) {
         for (const [i, f] of ['CLK', 'DT', 'SW'].entries()) { add({ k: 'R', n: [N(f), N('+')], r: 10000 }); add({ k: 'SW', n: [N(f), N('GND')], sw: 'e' + i }); }
         break;
       case 'servo': add({ k: 'R', n: [N('+'), N('GND')], r: 1000, servo: true }); add({ k: 'R', n: [N('S'), N('GND')], r: 1e6 }); break;
+      // multimetro: voltmetro 10 MΩ tra V e COM; amperometro 0,1 Ω tra A e COM (in serie!); ohmmetro: misura a parte
+      case 'dmm':
+        if (o.modo === 'V') add({ k: 'R', n: [N('V'), N('COM')], r: 1e7, misura: 'v' });
+        else if (o.modo === 'A') add({ k: 'R', n: [N('A'), N('COM')], r: 0.1, misura: 'i' });
+        else { add({ k: 'R', n: [N('V'), N('COM')], r: 1e12, misura: 'o' }); }
+        break;
+      // oscilloscopio: ingressi da 1 MΩ verso la sua massa
+      case 'scope': add({ k: 'R', n: [N('A'), N('GND')], r: 1e6, misura: 'a' }); add({ k: 'R', n: [N('B'), N('GND')], r: 1e6, misura: 'b' }); break;
+      case 'gen': add({ k: 'GEN', n: [N('+'), N('COM')], o }); break;
+      case 'psu': add({ k: 'PSU', n: [N('+'), N('-')], v: o.v, ilim: o.ilim }); break;
       case 'seg7': case 'seg7x3': {
         const ac = o.anode == 1, nd = c.type === 'seg7' ? 1 : 3;
         for (let d = 0; d < nd; d++) {
@@ -290,23 +319,37 @@ export function elementi(net) {
 // ------------------------------------------------------------------
 // Solutore: nodi → incognite (GND fuori), eliminazione di Gauss; diodi e BJT a tratti, iterando
 // finché le regioni sono coerenti. pinState: (pin) → { mode, pull, od, level }.
-function gauss(A, b, n) {
+// LU con pivot parziale (la stessa matrice si riusa per molti passi nel tempo)
+function fattorizza(A0, n) {
+  const A = Float64Array.from(A0), perm = new Int32Array(n);
+  for (let i = 0; i < n; i++) perm[i] = i;
   for (let i = 0; i < n; i++) {
     let p = i, m = Math.abs(A[i * n + i]);
     for (let r = i + 1; r < n; r++) { const v = Math.abs(A[r * n + i]); if (v > m) { m = v; p = r; } }
-    if (m < 1e-30) { A[i * n + i] = 1e-12; continue; }
-    if (p !== i) { for (let c = 0; c < n; c++) { const t = A[i * n + c]; A[i * n + c] = A[p * n + c]; A[p * n + c] = t; } const t = b[i]; b[i] = b[p]; b[p] = t; }
+    if (m < 1e-30) A[i * n + i] = 1e-12;
+    if (p !== i) { for (let c = 0; c < n; c++) { const t = A[i * n + c]; A[i * n + c] = A[p * n + c]; A[p * n + c] = t; } const t = perm[i]; perm[i] = perm[p]; perm[p] = t; }
     const d = A[i * n + i];
     for (let r = i + 1; r < n; r++) {
       const f = A[r * n + i] / d;
+      A[r * n + i] = f;
       if (!f) continue;
-      for (let c = i; c < n; c++) A[r * n + c] -= f * A[i * n + c];
-      b[r] -= f * b[i];
+      for (let c = i + 1; c < n; c++) A[r * n + c] -= f * A[i * n + c];
     }
   }
+  return { A, perm };
+}
+function sostituisci({ A, perm }, b, n) {
+  const y = new Float64Array(n);
+  for (let i = 0; i < n; i++) { let s = b[perm[i]]; for (let c = 0; c < i; c++) s -= A[i * n + c] * y[c]; y[i] = s; }
   const x = new Float64Array(n);
-  for (let i = n - 1; i >= 0; i--) { let s = b[i]; for (let c = i + 1; c < n; c++) s -= A[i * n + c] * x[c]; x[i] = s / A[i * n + i]; }
+  for (let i = n - 1; i >= 0; i--) { let s = y[i]; for (let c = i + 1; c < n; c++) s -= A[i * n + c] * x[c]; x[i] = s / A[i * n + i]; }
   return x;
+}
+// tensione del generatore di funzioni al tempo t (s)
+export function valoreGen(o, t) {
+  const ph = ((t * o.f) % 1 + 1) % 1;
+  const w = o.forma === 'quadra' ? (ph < 0.5 ? 1 : -1) : o.forma === 'tri' ? (ph < 0.5 ? 4 * ph - 1 : 3 - 4 * ph) : Math.sin(2 * Math.PI * ph);
+  return o.off + o.amp * w;
 }
 
 // modello di un pin: [V, R] di un generatore verso massa, o null (aperto)
@@ -329,13 +372,18 @@ export function risolvi(circ, st, prev, capDt) {
   for (let i = 0; i < nn; i++) if (i !== G && usati.has(i)) idx[i] = n++;
   const I = i => (i === undefined || i < 0 || i === G ? -1 : idx[i]);
   const reg = new Map();
-  for (const e of circ.el) if (e.k === 'D' || e.k === 'Q') reg.set(e, prev && prev.has(e) ? prev.get(e) : 0);
+  for (const e of circ.el) if (e.k === 'D' || e.k === 'Q' || e.k === 'PSU') reg.set(e, prev && prev.has(e) ? prev.get(e) : 0);
+  const spento = !!st.spento;   // ohmmetro: tutte le sorgenti spente
   const pinMod = new Map();
   for (const e of circ.el) if (e.k === 'P') pinMod.set(e, modelloPin(st.pins[e.pin]));
   const chiuso = e => e.sw === 'p' ? st.premuti.has(e.comp.id) : e.sw === 'b1' ? !!st.b1 : e.sw[0] === 'e' ? !!((st.enc[e.comp.id] || [])[+e.sw[1]]) : false;
   let V = new Float64Array(nn), giri = 0;
+  // fattorizzazioni LU già fatte per questa matrice (cambia solo con regioni, pin, interruttori e passo):
+  // nel tempo, a ogni passo cambiano solo i termini noti (generatore, condensatori) → basta la sostituzione
+  const lu = circ._lu || (circ._lu = new Map());
   for (; giri < 60; giri++) {
     const A = new Float64Array(n * n), b = new Float64Array(n);
+    let chiaveA = '';
     const g2 = (a, c, g) => { a = I(a); c = I(c); if (a >= 0) A[a * n + a] += g; if (c >= 0) A[c * n + c] += g; if (a >= 0 && c >= 0) { A[a * n + c] -= g; A[c * n + a] -= g; } };
     const fonte = (a, c, i) => { a = I(a); c = I(c); if (a >= 0) b[a] -= i; if (c >= 0) b[c] += i; };   // corrente i da a verso c
     const vsrc = (a, c, v, r) => { g2(a, c, 1 / r); fonte(a, c, -v / r); };                           // a−c = v + r·i
@@ -347,14 +395,24 @@ export function risolvi(circ, st, prev, capDt) {
     for (const e of circ.el) {
       switch (e.k) {
         case 'R': g2(e.n[0], e.n[1], 1 / e.r); break;
-        case 'SW': if (e.n[0] !== undefined && e.n[1] !== undefined) g2(e.n[0], e.n[1], chiuso(e) ? 1 / MOD.RSW : MOD.GOFF); break;
-        case 'V': vsrc(e.n[0], G, e.v, e.r); break;
-        case 'P': { const m = pinMod.get(e); if (m) vsrc(e.n[0], G, m[0], m[1]); break; }
-        case 'C': { const cd = capDt && capDt.get(e); if (cd) vsrc(e.n[0], e.n[1], cd[0], cd[1] / e.c); else g2(e.n[0], e.n[1], MOD.GOFF); break; }
-        case 'D': if (reg.get(e)) vsrc(e.n[0], e.n[1], e.vth, e.rd); else g2(e.n[0], e.n[1], MOD.GOFF); break;
+        case 'SW': if (e.n[0] !== undefined && e.n[1] !== undefined) { const c = chiuso(e); chiaveA += c ? 1 : 0; g2(e.n[0], e.n[1], c ? 1 / MOD.RSW : MOD.GOFF); } break;
+        case 'V': if (spento) break; vsrc(e.n[0], G, e.v, e.r); break;
+        case 'P': { const m = spento ? null : pinMod.get(e); chiaveA += m ? m[1] : '-'; if (m) vsrc(e.n[0], G, m[0], m[1]); break; }
+        case 'C': { const cd = capDt && capDt.get(e); chiaveA += cd ? cd[1] : '-'; if (cd) vsrc(e.n[0], e.n[1], cd[0], cd[1] / e.c); else g2(e.n[0], e.n[1], MOD.GOFF); break; }
+        case 'D': chiaveA += reg.get(e); if (reg.get(e)) vsrc(e.n[0], e.n[1], e.vth, e.rd); else g2(e.n[0], e.n[1], MOD.GOFF); break;
+        case 'GEN': if (spento) break; vsrc(e.n[0], e.n[1], valoreGen(e.o, st.t || 0), GEN_R); break;
+        case 'PSU': {
+          if (spento) break;
+          const r = reg.get(e); chiaveA += 'p' + r;
+          if (r === 0) vsrc(e.n[0], e.n[1], e.v, MOD.RALIM);
+          else { fonte(e.n[1], e.n[0], e.ilim); g2(e.n[0], e.n[1], 1e-6); }   // limite di corrente: esce ilim dal +
+          break;
+        }
+        case 'IT': fonte(e.n[0], e.n[1], e.i); break;   // corrente di prova dell'ohmmetro
         case 'Q': {
           const [E, B, C] = e.n, s = e.s, r = reg.get(e);
           const [ba, bk] = s > 0 ? [B, E] : [E, B], [cx, cy] = s > 0 ? [C, E] : [E, C];
+          chiaveA += 'q' + r;
           if (r === 0) { g2(B, E, MOD.GOFF); g2(C, E, MOD.GOFF); break; }
           vsrc(ba, bk, MOD.VBE, MOD.RBE);
           if (r === 1) { vccs(cx, cy, ba, bk, e.beta / MOD.RBE, MOD.VBE); g2(C, E, 1e-7); }
@@ -363,7 +421,9 @@ export function risolvi(circ, st, prev, capDt) {
         }
       }
     }
-    const x = gauss(A, b, n);
+    let f = lu.get(chiaveA);
+    if (!f) { f = fattorizza(A, n); if (lu.size > 64) lu.clear(); lu.set(chiaveA, f); }
+    const x = sostituisci(f, b, n);
     V = new Float64Array(nn);
     for (let i = 0; i < nn; i++) if (idx[i] >= 0) V[i] = x[idx[i]];
     const v = i => (i === undefined || i < 0 || i === G ? 0 : V[i]);
@@ -374,6 +434,10 @@ export function risolvi(circ, st, prev, capDt) {
         const vd = v(e.n[0]) - v(e.n[1]), on = reg.get(e);
         if (on && (vd - e.vth) / e.rd < -1e-9) cambi.push([e, 0]);
         else if (!on && vd > e.vth + 1e-6) cambi.push([e, 1]);
+      } else if (e.k === 'PSU' && !spento) {
+        const r = reg.get(e), vu = v(e.n[0]) - v(e.n[1]);
+        if (r === 0 && (e.v - vu) / MOD.RALIM > e.ilim) cambi.push([e, 1]);
+        else if (r === 1 && vu > e.v) cambi.push([e, 0]);
       } else if (e.k === 'Q') {
         const [E, B, C] = e.n, s = e.s, r = reg.get(e);
         const vbe = s * (v(B) - v(E)), vce = s * (v(C) - v(E)), ib = (vbe - MOD.VBE) / MOD.RBE;
@@ -398,7 +462,9 @@ function analizza(circ, st, V, reg, pinMod, chiuso, capDt, giri) {
   for (const e of circ.el) {
     switch (e.k) {
       case 'D': { const i = reg.get(e) ? (v(e.n[0]) - v(e.n[1]) - e.vth) / e.rd : 0; out.led.set(e, i); if (e.comp) add(e.comp, e.seg !== undefined ? 's' + e.seg : 'i', i); if (e.interno === 'LD2') out.ld2 = i; break; }
-      case 'R': { const i = (v(e.n[0]) - v(e.n[1])) / e.r; if (e.comp) { add(e.comp, e.pot ? 'i' + e.pot : 'i', i); if (e.buzz || e.motor) add(e.comp, 'v', v(e.n[0]) - v(e.n[1])); if (e.servo) add(e.comp, 'vcc', v(e.n[0]) - v(e.n[1])); } break; }
+      case 'R': { const i = (v(e.n[0]) - v(e.n[1])) / e.r;
+        if (e.misura) { const vv = v(e.n[0]) - v(e.n[1]); if (e.misura === 'v') { add(e.comp, 'v', vv); add(e.comp, 'v2', vv * vv); } else if (e.misura === 'i') { add(e.comp, 'i', i); add(e.comp, 'i2', i * i); } else if (e.misura === 'a' || e.misura === 'b') add(e.comp, e.misura, vv); break; }
+        if (e.comp) { add(e.comp, e.pot ? 'i' + e.pot : 'i', i); if (e.buzz || e.motor) add(e.comp, 'v', v(e.n[0]) - v(e.n[1])); if (e.servo) add(e.comp, 'vcc', v(e.n[0]) - v(e.n[1])); } break; }
       case 'P': { const m = pinMod.get(e); out.pin[e.pin] = { i: m ? (m[0] - v(e.n[0])) / m[1] : 0, v: v(e.n[0]), drive: !!m && m[1] === MOD.RPIN }; break; }
       case 'V': if (e.alim) out.alim[e.alim] = (out.alim[e.alim] || 0) + (e.v - v(e.n[0])) / e.r; break;
       case 'Q': {
@@ -410,6 +476,8 @@ function analizza(circ, st, V, reg, pinMod, chiuso, capDt, giri) {
       }
       case 'C': { const cd = capDt && capDt.get(e); const vc = v(e.n[0]) - v(e.n[1]); out.cap.set(e, vc); if (e.comp) add(e.comp, 'vc', vc); if (cd) add(e.comp, 'i', (vc - cd[0]) * e.c / cd[1]); break; }
       case 'SW': if (e.comp && e.comp.type === 'button') add(e.comp, 'chiuso', chiuso(e) ? 1 : 0); break;
+      case 'GEN': add(e.comp, 'v', v(e.n[0]) - v(e.n[1])); break;
+      case 'PSU': { const vu = v(e.n[0]) - v(e.n[1]), i = reg.get(e) === 0 ? (e.v - vu) / MOD.RALIM : e.ilim; add(e.comp, 'v', vu); add(e.comp, 'i', i); add(e.comp, 'cc', reg.get(e) === 1 ? 1 : 0); break; }
     }
   }
   return out;
@@ -472,6 +540,18 @@ export function flottanti(circ, net, st, res) {
     if (!ok) out.push({ cod: 'flott', chiave: e.pin, pins: [e.pin], testo: `${e.pin}${ARDUINO[e.pin] ? ' (' + ARDUINO[e.pin] + ')' : ''} è un ingresso flottante: non è collegato a niente che gli dia un livello (pulsante aperto senza resistenza?). Metti una resistenza di pull-up/pull-down o attiva quella interna in CubeMX.` });
   }
   return out;
+}
+
+// ohmmetro del multimetro: tutte le sorgenti spente (come a circuito scollegato), 1 mA iniettato tra V e COM.
+// Ritorna i ohm, Infinity se il circuito è aperto (OL), null se il multimetro non è in Ω.
+export function misuraOhm(circ, comp) {
+  const m = circ.el.find(e => e.comp && e.comp.id === comp.id && e.misura === 'o');
+  if (!m || m.n[0] === undefined || m.n[1] === undefined) return m ? Infinity : null;
+  const c2 = { ...circ, el: [...circ.el, { k: 'IT', n: [m.n[1], m.n[0]], i: 1e-3 }], _lu: new Map() };
+  const r = risolvi(c2, { pins: {}, premuti: new Set(), enc: {}, b1: false, spento: true }, null, null);
+  const vv = (m.n[0] === circ.G ? 0 : r.V[m.n[0]]) - (m.n[1] === circ.G ? 0 : r.V[m.n[1]]);
+  const R = vv / 1e-3;
+  return R > 4e7 ? Infinity : Math.max(0, R);
 }
 
 // livello logico letto da un ingresso: 1 sopra 0,7·VDD, 0 sotto 0,3·VDD, null in mezzo (incerto)

@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-24e';
+import * as K from './circuito.js?v=2026-11-24g';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -23,7 +23,7 @@ const B = {
   cache: new Map(), stato: null, chiaveStato: '', ultimo: null, ultimoMs: 0,
   acc: null, pub: null, premuti: new Set(), enc: {}, encPos: {},
   inviati: new Map(), adcInviati: new Map(), problemi: new Map(), segnalati: new Set(),
-  capV: new Map(), salvaT: null, risolte: 0, colore: K.COLORI_FILO[3], rallentato: false,
+  capV: new Map(), salvaT: null, tempo: false, oscStato: {}, pannello: null, ta: 0, regT: null, osc: {}, budget: 0, richiesti: 0, fatti: 0, tratto: 0, tCtrl: 0, ritardo: 0, risolte: 0, colore: K.COLORI_FILO[3], rallentato: false,
 };
 window.BB = B;
 
@@ -34,18 +34,17 @@ function disegnoStatico() {
   const N = K.NUCLEO, BB_ = K.BB;
   let s = '';
   // Nucleo
-  s += `<rect x="${N.x * P - 4}" y="${N.y * P}" width="${(N.w + 1) * P}" height="${N.h * P}" rx="6" fill="#f2f2f2" stroke="#9aa0a6"/>`;
+  s += `<rect x="${N.x * P - 26}" y="${N.y * P}" width="${(N.w + 1) * P + 26}" height="${N.h * P}" rx="6" fill="#f2f2f2" stroke="#9aa0a6"/>`;
   s += `<rect x="${N.x * P + 60}" y="${N.y * P + 4}" width="180" height="78" rx="4" fill="#e6e6e6" stroke="#b0b4ba"/>`;
   s += `<text x="${N.x * P + 150}" y="${N.y * P + 30}" font-size="11" text-anchor="middle" fill="#455" font-family="sans-serif">ST-LINK/V2-1</text>`;
   s += `<rect x="${N.x * P + 130}" y="${N.y * P - 6}" width="40" height="18" rx="2" fill="#aab" stroke="#778"/>`;
   s += `<text x="${N.x * P + 150}" y="${N.y * P + 104}" font-size="12" font-weight="bold" text-anchor="middle" fill="#1d3a6b" font-family="sans-serif">NUCLEO-F401RE</text>`;
   s += `<rect x="${N.x * P + 110}" y="${N.y * P + 190}" width="80" height="80" fill="#2b2b2b" stroke="#111"/><text x="${N.x * P + 150}" y="${N.y * P + 234}" font-size="8" text-anchor="middle" fill="#ccc" font-family="sans-serif">STM32F401RE</text>`;
   // LD2 e B1 (disegnati; LD2 si accende come sulla scheda)
-  s += `<circle id="bb-ld2" cx="${N.x * P + 200}" cy="${N.y * P + 150}" r="5" fill="#2d4a33"/><text x="${N.x * P + 212}" y="${N.y * P + 153}" font-size="8" fill="#455" font-family="sans-serif">LD2</text>`;
+  s += `<circle id="bb-ld2" cx="${N.x * P + 168}" cy="${N.y * P + 150}" r="5" fill="#2d4a33"/><text x="${N.x * P + 176}" y="${N.y * P + 153}" font-size="7" fill="#455" font-family="sans-serif">LD2</text>`;
   s += `<rect x="${N.x * P + 80}" y="${N.y * P + 330}" width="26" height="26" rx="3" fill="#ddd" stroke="#888"/><circle cx="${N.x * P + 93}" cy="${N.y * P + 343}" r="8" fill="#1e5bd8"/><text x="${N.x * P + 93}" y="${N.y * P + 370}" font-size="8" text-anchor="middle" fill="#455" font-family="sans-serif">B1</text>`;
   s += `<text x="${1.5 * P}" y="${11 * P - 2}" font-size="8" text-anchor="middle" fill="#455" font-family="sans-serif">CN7</text><text x="${27.5 * P}" y="${11 * P - 2}" font-size="8" text-anchor="middle" fill="#455" font-family="sans-serif">CN10</text>`;
-  s += `<text x="${5 * P}" y="${13 * P - 2}" font-size="7" text-anchor="middle" fill="#455" font-family="sans-serif">CN6</text><text x="${5 * P}" y="${22 * P - 2}" font-size="7" text-anchor="middle" fill="#455" font-family="sans-serif">CN8</text>`;
-  s += `<text x="${24 * P}" y="${9 * P - 2}" font-size="7" text-anchor="middle" fill="#455" font-family="sans-serif">CN5</text><text x="${24 * P}" y="${20 * P - 2}" font-size="7" text-anchor="middle" fill="#455" font-family="sans-serif">CN9</text>`;
+  s += `<text x="${5 * P}" y="${13 * P - 2}" font-size="6" text-anchor="middle" fill="#455" font-family="sans-serif">CN6</text><text x="${24 * P}" y="${9 * P - 2}" font-size="6" text-anchor="middle" fill="#455" font-family="sans-serif">CN5</text>`;
   // connettori: strisce nere sotto i fori
   s += `<rect x="${0.5 * P}" y="${11.5 * P}" width="${2 * P}" height="${19 * P}" fill="#222"/><rect x="${26.5 * P}" y="${11.5 * P}" width="${2 * P}" height="${19 * P}" fill="#222"/>`;
   s += `<rect x="${4.5 * P}" y="${13.5 * P}" width="${P}" height="${8 * P}" fill="#222"/><rect x="${4.5 * P}" y="${22.5 * P}" width="${P}" height="${6 * P}" fill="#222"/>`;
@@ -58,6 +57,28 @@ function disegnoStatico() {
   for (const [dy, t] of [[0, '+'], [1, '−'], [17, '+'], [18, '−']]) s += `<text x="${bx + 1.6 * P}" y="${by + dy * P + 3}" font-size="9" text-anchor="middle" fill="${t === '+' ? '#d33' : '#26c'}" font-family="sans-serif">${t}</text>`;
   'abcdefghij'.split('').forEach((r, i) => s += `<text x="${bx + 1 * P}" y="${by + (i < 5 ? 3 + i : 5 + i) * P + 3}" font-size="7" text-anchor="middle" fill="#888" font-family="sans-serif">${r}</text>`);
   for (let c = 1; c <= 63; c += c === 1 ? 4 : 5) s += `<text x="${bx + (1 + c) * P}" y="${by + 2.3 * P}" font-size="6.5" text-anchor="middle" fill="#888" font-family="sans-serif">${c}</text>`;
+  // nomi dei pin accanto ai connettori: STM32 sui Morpho (CN7, CN10), Arduino + STM32 sugli Arduino
+  // (CN5, CN6, CN8, CN9). Allontanando la vista spariscono (classe "lontano"); il dettaglio resta nella riga in basso.
+  s += '<g id="bb-nomi-pin" font-family="ui-monospace, Menlo, monospace" fill="#2b3440">';
+  for (const f of K.FORI.values()) {
+    const m = /^CN(\d+)[- ](.*)$/.exec(f.nome);
+    if (!m) continue;
+    const cn = +m[1], resto = m[2];
+    let t = '', lato = 1, fs = 6.5;
+    if (cn === 7 || cn === 10) {
+      const sig = resto.split(' ')[1] || '';
+      t = sig.replace(/^\+/, ''); fs = 6;
+      lato = (cn === 7 ? f.x === 1 : f.x === 27) ? -1 : 1;
+    } else {
+      const mm = /^(\S+)(?: \((\S+)\))?$/.exec(resto) || [];
+      t = mm[2] && mm[1] !== mm[2] ? (/^P/.test(mm[2]) ? `${mm[1]} ${mm[2]}` : mm[1]) : (mm[1] || '');
+      lato = cn === 5 || cn === 9 ? -1 : 1;
+    }
+    if (!t || t === 'NC') continue;
+    const pw = /^(5V|3V3|U5V|E5V|VIN|VDD|AVDD|IOREF)$/.test(t) ? ' fill="#b3261e"' : /^(GND|AGND)$/.test(t) ? ' fill="#111"' : '';
+    s += `<text x="${(f.x + lato * 0.5) * P}" y="${f.y * P + fs * 0.36}" font-size="${fs}" text-anchor="${lato < 0 ? 'end' : 'start'}"${pw}>${esc(t)}</text>`;
+  }
+  s += '</g>';
   // fori
   for (const f of K.FORI.values()) s += `<rect x="${f.x * P - 2.2}" y="${f.y * P - 2.2}" width="4.4" height="4.4" rx="0.8" fill="${f.id.startsWith('CN') ? '#c8a85a' : '#3d3d3d'}"/>`;
   return s;
@@ -105,6 +126,7 @@ function compSVG(c) {
       `<g data-act="enc" data-id="${id}"><circle cx="20" cy="-30" r="15" fill="#888" stroke="#444"/><circle cx="20" cy="-30" r="9" fill="#bbb"/><g data-rot="${id}" transform="rotate(${(B.encPos[id] || 0) * 18} 20 -30)"><rect x="18.5" y="-43" width="3" height="9" fill="#333"/></g></g>`;
     case 'servo': return leg(0, 0, 0, -6) + leg(P, 0, P, -6) + leg(2 * P, 0, 2 * P, -6) + `<path d="M0 -6 C0 -12 ${P} -12 ${P} -16" stroke="#6b3d1f" stroke-width="2" fill="none"/><path d="M${P} -6 L${P} -16" stroke="#d22" stroke-width="2"/><path d="M${2 * P} -6 C${2 * P} -12 ${P} -12 ${P} -16" stroke="#f80" stroke-width="2" fill="none"/>` +
       `<rect x="-12" y="-50" width="44" height="34" rx="3" fill="#2a64c4"/><text x="10" y="-20" font-size="5" text-anchor="middle" fill="#fff" font-family="sans-serif">SG90</text><g data-rot="${id}" transform="rotate(0 10 -36)"><rect x="7" y="-58" width="6" height="26" rx="3" fill="#f5f5f5" stroke="#999"/></g><circle cx="10" cy="-36" r="4" fill="#ddd"/>`;
+    case 'dmm': case 'scope': case 'gen': case 'psu': return strumentoSVG(c);
     case 'seg7': return `<rect x="-6" y="-4" width="52" height="${6 * P + 8}" rx="2" fill="#151515"/>${cifraSVG(id, 0, 6, 4, 0.33)}`;
     case 'seg7x3': return `<rect x="-6" y="-5" width="62" height="${4 * P + 10}" rx="2" fill="#151515"/>${[0, 1, 2].map(d => cifraSVG(id, d, 0 + d * 19, 2, 0.21)).join('')}`;
   }
@@ -119,7 +141,7 @@ function etichetta(c) {
   // componenti a due piedini in verticale: la scritta lungo il corpo (se no si sovrappongono)
   const vert = xs.length === 2 && xs[0] === xs[1];
   const pos = vert ? `x="${cx + 7}" y="${cy}" transform="rotate(-90 ${cx + 7} ${cy})"` : `x="${cx}" y="${y}"`;
-  return `<text ${pos} font-size="6.5" text-anchor="middle" fill="#334" font-family="sans-serif" paint-order="stroke" stroke="#fff" stroke-width="2">${esc(t.trim())}</text>`;
+  return `<text ${pos} font-size="6.5" text-anchor="middle" fill="#334" font-family="sans-serif" paint-order="stroke" stroke="#fff" stroke-width="2" pointer-events="none">${esc(t.trim())}</text>`;
 }
 function disegnaComponenti() {
   const g = $('#bb-comps');
@@ -127,7 +149,15 @@ function disegnaComponenti() {
     B.bb.comps.map(etichetta).join('');
   // area di presa: tutto il riquadro del componente (il ponticello, disegnato solo con il tratto, prima si
   // prendeva solo cliccando esattamente sulla linea: il clic finiva sul foro sotto e partiva un filo)
-  g.querySelectorAll('[data-comp]').forEach(el => { try { const b = el.getBBox(), m = 2.5; el.insertAdjacentHTML('afterbegin', `<rect class="presa" x="${b.x - m}" y="${b.y - m}" width="${b.width + 2 * m}" height="${b.height + 2 * m}" fill="transparent"/>`); } catch {} });
+  B.ingombri = [];
+  g.querySelectorAll('[data-comp]').forEach(el => { try {
+    const b = el.getBBox(), m = 2.5, c = B.bb.comps.find(c => c.id === el.dataset.comp);
+    el.insertAdjacentHTML('afterbegin', `<rect class="presa" x="${b.x - m}" y="${b.y - m}" width="${b.width + 2 * m}" height="${b.height + 2 * m}" fill="transparent"/>`);
+    // ingombro nel banco (passi), ruotato come il componente: i fori sotto il corpo sono coperti
+    const pts = [[b.x, b.y], [b.x + b.width, b.y + b.height]].map(([x, y]) => K.ruota(x / P, y / P, c.rot || 0));
+    B.ingombri.push({ id: c.id, x0: c.x + Math.min(pts[0][0], pts[1][0]), x1: c.x + Math.max(pts[0][0], pts[1][0]), y0: c.y + Math.min(pts[0][1], pts[1][1]), y1: c.y + Math.max(pts[0][1], pts[1][1]),
+      pins: new Set(K.piediniXY(c).map(p => p.x + ',' + p.y)) });
+  } catch {} });
   $('#bb-wires').innerHTML = B.bb.wires.map(w => {
     const pts = w.p.map(q => q.map(v => v * P).join(',')).join(' ');
     const end = (q) => `<circle cx="${q[0] * P}" cy="${q[1] * P}" r="2.6" fill="${w.col}" stroke="#0006" stroke-width=".6"/>`;
@@ -182,12 +212,13 @@ function nuovaEtichetta(tipo, bb = B.bb) {
   return pref + (n + 1);
 }
 const nuovoId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-function aggiungi(tipo, x, y) {
+function aggiungi(tipo, x, y, rot = 0) {
   const opt = Object.fromEntries(K.OPZIONI[tipo].map(([k, d]) => [k, d]));
-  const c = { id: nuovoId('c'), type: tipo, x, y, rot: 0, opt, label: nuovaEtichetta(tipo) };
+  const c = { id: nuovoId('c'), type: tipo, x, y, rot, opt, label: nuovaEtichetta(tipo) };
   modifica(bb => bb.comps.push(c));
   B.sel = new Set([c.id]);
   disegnaSelezione();
+  if (K.STRUMENTI.includes(tipo)) apriPannello(c.id);   // come in Multisim: il pannello si apre subito
   return c;
 }
 function elimina() {
@@ -239,7 +270,9 @@ function costruisci() {
   B.corti = K.corti(B.net);
   const { el, usati, G } = K.elementi(B.net);
   B.circ = { el, usati, G, nodi: B.net.nodi };
-  B.haCap = el.some(e => e.k === 'C');
+  // nel tempo: condensatori, generatore, oscilloscopio (gli altri strumenti vanno anche in continua)
+  B.tempo = el.some(e => e.k === 'C' || e.k === 'GEN') || B.bb.comps.some(c => c.type === 'scope');
+  B.regT = null;
   B.cache.clear(); B.chiaveStato = ''; B.ultimo = null;
   B.pinCirc = [...new Set(el.filter(e => e.k === 'P').map(e => e.pin))];
   // pin che non sono più nel circuito: liberi
@@ -268,7 +301,7 @@ function statoEsterno() {
 const chiaveDi = st => JSON.stringify([st.pins, st.pwm, [...st.premuti].sort(), st.enc, st.b1]);
 // una soluzione (cache se non ci sono condensatori)
 function soluzione(st, capDt) {
-  if (!B.haCap) {
+  if (!B.tempo) {
     const k = chiaveDi(st);
     const hit = B.cache.get(k);
     if (hit) return hit;
@@ -278,7 +311,7 @@ function soluzione(st, capDt) {
   const res = K.risolvi(B.circ, st, B.ultimo && B.ultimo.res ? B.ultimo.res.reg : null, capDt);
   const r = { res, riass: riassunto(res), prob: [...K.controlli(B.circ, B.net, st, res), ...K.flottanti(B.circ, B.net, st, res)] };
   for (const p of r.prob) segnala(p);
-  if (!B.haCap) { if (B.cache.size > CACHE_MAX) B.cache.clear(); B.cache.set(chiaveDi(st), r); }
+  if (!B.tempo) { if (B.cache.size > CACHE_MAX) B.cache.clear(); B.cache.set(chiaveDi(st), r); }
   return r;
 }
 function riassunto(res) {
@@ -314,13 +347,9 @@ function attuale() {
   if (B.dirtyCirc) costruisci();
   if (B.corti.length) return null;
   const st = statoEsterno(), k = chiaveDi(st);
-  if (k !== B.chiaveStato || !B.ultimo || B.haCap) {
-    if (B.haCap) {
-      const cd = new Map();
-      for (const e of B.circ.el) if (e.k === 'C') cd.set(e, [B.capV.get(e) || 0, B.passoCap || 1e-3]);
-      B.ultimo = valuta(st, cd);
-      for (const e of B.circ.el) if (e.k === 'C' && B.ultimo) B.capV.set(e, B.ultimo.res.cap.get(e) || 0);
-    } else B.ultimo = valuta(st);
+  if (B.tempo && B.ultimo) return B.ultimo;   // nel tempo l'ultimo passo calcolato da integra()
+  if (k !== B.chiaveStato || !B.ultimo) {
+    B.ultimo = valuta(st);
     B.chiaveStato = k; B.stato = st;
   }
   return B.ultimo;
@@ -331,12 +360,7 @@ function avanza(ms) {
   const dt = ms - B.ultimoMs;
   if (dt <= 0) { if (dt < 0) B.ultimoMs = ms; return; }
   B.ultimoMs = ms;
-  if (B.haCap) {
-    // condensatori: passi da 1 ms (al massimo 50 per volta, poi un passo lungo)
-    const n = Math.min(dt, 50);
-    for (let i = 0; i < n; i++) { B.passoCap = (i === n - 1 ? dt - (n - 1) : 1) * 1e-3; B.chiaveStato = ''; const r = attuale(); if (!r) return; somma(B.acc, r.riass, B.passoCap * 1000); B.acc.t += B.passoCap * 1000; }
-    return;
-  }
+  if (B.tempo) { if (ms * 1e-3 < B.ta - 1e-9) B.ta = ms * 1e-3; integra(ms * 1e-3); return; }
   const r = attuale();
   if (!r) return;
   somma(B.acc, r.riass, dt);
@@ -350,7 +374,7 @@ function rinfresca(r) {
 }
 window.bbOnC = ms => { if (B.caricato && B.bb.comps.length) avanza(ms); };
 window.bbOnM = () => { if (B.caricato && B.bb.comps.length) avanza(S.ms); };
-window.bbReset = () => { B.acc = null; B.pub = null; B.ultimoMs = 0; B.segnalati.clear(); B.inviati.clear(); B.adcInviati.clear(); B.capV.clear(); B.chiaveStato = ''; ingressiIniziali(); };
+window.bbReset = () => { B.ta = 0; B.osc = {}; B.regT = null; B.tratto++; B.acc = null; B.pub = null; B.ultimoMs = 0; B.segnalati.clear(); B.inviati.clear(); B.adcInviati.clear(); B.capV.clear(); B.chiaveStato = ''; ingressiIniziali(); };
 // la scheda riparte: prima che il programma configuri i pin, gli ingressi hanno già il livello del
 // circuito (es. CLK e DT dell'encoder a 1 per i pull-up), come sulla breadboard vera
 function ingressiIniziali() {
@@ -391,6 +415,274 @@ function aggiornaIngressi() {
 }
 
 // ------------------------------------------------------------------
+// Simulazione nel tempo (tappa B): serve con generatore, oscilloscopio o condensatori.
+// Passo dt: 1 ms, più piccolo per il generatore (40 punti per periodo), per l'oscilloscopio (500 punti per
+// schermata) e per il PWM che l'oscilloscopio deve vedere (20 punti per periodo); mai sotto 2 µs.
+// Al massimo PASSI_FOTOGRAMMA passi per fotogramma (~10 µs l'uno su un circuito piccolo, ~40 µs sul cronometro):
+// se non basta, il tempo analogico salta in avanti e lo si dice (B.ritardo) — l'oscilloscopio si aggancia
+// solo dentro un tratto continuo, quindi la forma d'onda resta giusta.
+const PASSI_FOTOGRAMMA = 1500, BUF_OSC = 40000;
+function passoTempo(st) {
+  let dt = 1e-3;
+  const osc = B.bb.comps.filter(c => c.type === 'scope');
+  for (const c of B.bb.comps) if (c.type === 'gen') dt = Math.min(dt, 1 / (c.opt.f * 40));
+  for (const c of osc) dt = Math.min(dt, c.opt.sdiv * 10 / 500);
+  if (osc.length && st) for (const [k] of st.pwm) { const { p, pin } = parseKey(k), i = pinInfo(p, pin); if (i && i.pwm && i.pwm.freq) dt = Math.min(dt, 1 / (i.pwm.freq * 20)); }
+  return Math.max(2e-6, dt);
+}
+function bufferOsc(id) {
+  return B.osc[id] || (B.osc[id] = { t: new Float64Array(BUF_OSC), a: new Float32Array(BUF_OSC), b: new Float32Array(BUF_OSC), tratto: new Int32Array(BUF_OSC), i: 0, n: 0 });
+}
+// avanza il tempo analogico fino a tFine (s) con lo stato dei pin di adesso
+function integra(tFine) {
+  if (B.dirtyCirc) costruisci();
+  if (B.corti.length) { B.ta = tFine; return; }
+  const st = statoEsterno();
+  const dt = passoTempo(st);
+  let n = Math.ceil((tFine - B.ta) / dt - 1e-9);
+  if (n <= 0) return;
+  B.richiesti += n;
+  if (n > B.budget) { B.ta = tFine - B.budget * dt; n = B.budget; B.tratto++; }   // non ce la fa: salta in avanti
+  if (n <= 0) { B.ta = tFine; return; }
+  B.budget -= n; B.fatti += n;
+  if (!B.acc) B.acc = { t: 0, comp: {}, pin: {}, ld2: 0 };
+  const caps = B.circ.el.filter(e => e.k === 'C'), osc = B.bb.comps.filter(c => c.type === 'scope');
+  const pwm = st.pwm.map(([k]) => { const { p, pin } = parseKey(k), i = pinInfo(p, pin); return [k, i.pwm.duty / 1000, i.pwm.freq]; }).filter(x => x[2] > 0);
+  const s2 = { ...st, pwm: [], pins: { ...st.pins } };
+  let res = null;
+  for (let j = 0; j < n; j++) {
+    const t = B.ta + dt;
+    s2.t = t;
+    for (const [k, d, f] of pwm) s2.pins[k] = { ...st.pins[k], level: ((t * f) % 1) < d ? 1 : 0 };
+    const cd = caps.length ? new Map(caps.map(e => [e, [B.capV.get(e) || 0, dt]])) : null;
+    res = K.risolvi(B.circ, s2, B.regT, cd);
+    B.regT = res.reg;
+    for (const e of caps) B.capV.set(e, res.cap.get(e) || 0);
+    const w = dt * 1000, a = B.acc;
+    for (const [id, m] of res.comp) { const d = a.comp[id] || (a.comp[id] = {}); for (const k in m) d[k] = (d[k] || 0) + m[k] * w; }
+    for (const k in res.pin) { const d = a.pin[k] || (a.pin[k] = { i: 0, v: 0 }); d.i += res.pin[k].i * w; d.v += res.pin[k].v * w; }
+    a.ld2 += (res.ld2 || 0) * w; a.t += w;
+    for (const c of osc) { const m = res.comp.get(c.id) || {}, bf = bufferOsc(c.id); bf.t[bf.i] = t; bf.a[bf.i] = m.a || 0; bf.b[bf.i] = m.b || 0; bf.tratto[bf.i] = B.tratto; bf.i = (bf.i + 1) % BUF_OSC; bf.n = Math.min(BUF_OSC, bf.n + 1); }
+    // i controlli del laboratorio ogni ~1 ms simulato (non a ogni passo: costano)
+    if (t - B.tCtrl >= 1e-3 || j === n - 1) { B.tCtrl = t; for (const p of [...K.controlli(B.circ, B.net, s2, res), ...K.flottanti(B.circ, B.net, s2, res)]) { const x = B.problemi.get(p.cod + ':' + p.chiave); if (x) x.quando = performance.now(); else segnala(p); } }
+    B.ta = t;
+  }
+  B.ultimo = { res, riass: riassunto(res), prob: [] };
+  B.stato = s2; B.chiaveStato = '';
+}
+
+// ------------------------------------------------------------------
+// Strumenti (tappa B): disegno sul banco, letture, pannelli come in Multisim (doppio clic sullo strumento)
+const fmtV = v => { const a = Math.abs(v); return a >= 100 ? v.toFixed(1) : a >= 10 ? v.toFixed(2) : v.toFixed(3); };
+const fmtSI = (v, u) => { const a = Math.abs(v); if (!isFinite(v)) return "OL"; const [k, p] = a >= 1e6 ? [1e-6, "M"] : a >= 1e3 ? [1e-3, "k"] : a >= 1 || a === 0 ? [1, ""] : a >= 1e-3 ? [1e3, "m"] : [1e6, "µ"]; return (v * k).toFixed(Math.abs(v * k) >= 100 ? (Number.isInteger(+(v * k).toFixed(3)) ? 0 : 1) : Math.abs(v * k) >= 10 ? 2 : 3).replace('.', ',') + ' ' + p + u; };
+function strumentoSVG(c) {
+  const o = c.opt, id = c.id, leg = (x, col) => `<line x1="${x}" y1="0" x2="${x}" y2="-8" stroke="${col}" stroke-width="2.4"/><circle cx="${x}" cy="0" r="3.2" fill="${col}" stroke="#111" stroke-width=".8"/>`;
+  const lab = (x, t) => `<text x="${x}" y="-11" font-size="5.5" text-anchor="middle" fill="#ddd" font-family="sans-serif">${t}</text>`;
+  switch (c.type) {
+    case 'dmm': return `<rect x="-10" y="-84" width="80" height="78" rx="8" fill="#f2b705" stroke="#8a6a00"/><rect x="-4" y="-78" width="68" height="62" rx="5" fill="#2a2d33"/>
+      <rect x="0" y="-74" width="60" height="22" rx="2" fill="#b9c8a6"/><text data-lcd="${id}" x="57" y="-57" font-size="13" text-anchor="end" fill="#1d2a14" font-family="ui-monospace, Menlo, monospace">${o.modo === 'Ω' ? 'OL' : '0.000'}</text>
+      <text data-lcdu="${id}" x="3" y="-56" font-size="6" fill="#1d2a14" font-family="sans-serif">${o.modo === 'Ω' ? 'Ω' : o.modo}${o.ac ? '~' : '⎓'}</text>
+      <text x="30" y="-38" font-size="7" text-anchor="middle" fill="#ddd" font-family="sans-serif">${o.modo === 'V' ? 'VOLT' : o.modo === 'A' ? 'AMPERE' : 'OHM'} ${o.ac ? 'AC' : 'DC'}</text>
+      ${lab(0, 'COM')}${lab(30, 'V Ω')}${lab(60, 'A')}${leg(0, '#222')}${leg(30, '#d22')}${leg(60, '#d22')}`;
+    case 'scope': return `<rect x="-14" y="-92" width="108" height="86" rx="6" fill="#3b4250" stroke="#20252d"/><rect x="-6" y="-86" width="70" height="52" rx="3" fill="#0b1a12"/>
+      <g stroke="#1c3a2a" stroke-width=".5">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => `<line x1="${-6 + i * 7}" y1="-86" x2="${-6 + i * 7}" y2="-34"/>`).join('')}${[1, 2, 3, 4, 5, 6, 7].map(i => `<line x1="-6" y1="${-86 + i * 6.5}" x2="64" y2="${-86 + i * 6.5}"/>`).join('')}</g>
+      <polyline data-oscmini="${id}:a" points="" fill="none" stroke="#ffd54a" stroke-width="1"/><polyline data-oscmini="${id}:b" points="" fill="none" stroke="#4fc3f7" stroke-width="1"/>
+      <text x="80" y="-70" font-size="6" text-anchor="middle" fill="#ddd" font-family="sans-serif">XSC</text><circle cx="80" cy="-56" r="5" fill="#222" stroke="#999"/><circle cx="80" cy="-42" r="5" fill="#222" stroke="#999"/>
+      <text x="29" y="-22" font-size="6" text-anchor="middle" fill="#ccc" font-family="sans-serif">doppio clic: pannello</text>
+      ${lab(0, 'A')}${lab(40, 'B')}${lab(80, 'GND')}${leg(0, '#ffd54a')}${leg(40, '#4fc3f7')}${leg(80, '#222')}`;
+    case 'gen': return `<rect x="-14" y="-66" width="58" height="60" rx="6" fill="#3b4250" stroke="#20252d"/><rect x="-8" y="-60" width="46" height="20" rx="2" fill="#10202a"/>
+      <text data-genl="${id}" x="15" y="-46" font-size="7.5" text-anchor="middle" fill="#7fe0ff" font-family="ui-monospace, Menlo, monospace">${esc(String(o.f))} Hz</text>
+      <text x="15" y="-30" font-size="6" text-anchor="middle" fill="#ddd" font-family="sans-serif">${o.forma === 'sin' ? '∿ sinusoide' : o.forma === 'quadra' ? '⊓ quadra' : '△ triangolare'}</text>
+      ${lab(0, '+')}${lab(30, 'COM')}${leg(0, '#d22')}${leg(30, '#222')}`;
+    case 'psu': return `<rect x="-14" y="-66" width="58" height="60" rx="6" fill="#2f3640" stroke="#20252d"/><rect x="-8" y="-60" width="46" height="13" rx="2" fill="#2b0d0d"/><rect x="-8" y="-45" width="46" height="13" rx="2" fill="#2b0d0d"/>
+      <text data-psuv="${id}" x="35" y="-50" font-size="9" text-anchor="end" fill="#ff5a4f" font-family="ui-monospace, Menlo, monospace">${o.v.toFixed(2)}V</text>
+      <text data-psui="${id}" x="35" y="-35" font-size="9" text-anchor="end" fill="#ff5a4f" font-family="ui-monospace, Menlo, monospace">0.000A</text>
+      <circle data-psucc="${id}" cx="-3" cy="-24" r="2.5" fill="#333"/><text x="2" y="-22" font-size="5.5" fill="#ddd" font-family="sans-serif">CC</text>
+      ${lab(0, '+')}${lab(30, '−')}${leg(0, '#d22')}${leg(30, '#222')}`;
+  }
+  return '';
+}
+// lettura del multimetro (media sull'ultima finestra; AC = valore efficace della parte alternata)
+function letturaDMM(c, m) {
+  const o = c.opt;
+  if (o.modo === 'Ω') {
+    const now = performance.now();
+    if (!B.ohm || B.ohm.id !== c.id || now - B.ohm.t > 300 || B.ohm.chiave !== JSON.stringify(B.bb)) {
+      if (B.dirtyCirc) costruisci();
+      B.ohm = { id: c.id, t: now, chiave: JSON.stringify(B.bb), r: B.circ ? K.misuraOhm(B.circ, c) : null };
+    }
+    const r = B.ohm.r;
+    return r === null || !isFinite(r) ? ['OL', 'Ω'] : [fmtSI(r, 'Ω').replace(/ ([kM]?)Ω$/, ''), (fmtSI(r, 'Ω').match(/ ([kM]?)Ω$/) || [, ''])[1] + 'Ω'];
+  }
+  const [x, x2, u] = o.modo === 'V' ? [m.v || 0, m.v2 || 0, 'V'] : [m.i || 0, m.i2 || 0, 'A'];
+  const val = o.ac ? Math.sqrt(Math.max(0, x2 - x * x)) : x;
+  const s = fmtSI(val, u);
+  return [s.replace(/ ([mµk]?)[VA]$/, ''), (s.match(/ ([mµk]?[VA])$/) || [, u])[1] + (o.ac ? '~' : '⎓')];
+}
+function aggiornaStrumenti(pub) {
+  for (const c of B.bb.comps) {
+    if (!K.STRUMENTI.includes(c.type)) continue;
+    const m = pub && pub.comp[c.id] || {};
+    const set = (sel, t) => { const x = document.querySelector(sel); if (x && x.textContent !== t) x.textContent = t; };
+    if (c.type === 'dmm') { const [v, u] = letturaDMM(c, m); set(`[data-lcd="${c.id}"]`, v); set(`[data-lcdu="${c.id}"]`, u); }
+    if (c.type === 'psu') {
+      set(`[data-psuv="${c.id}"]`, (m.v ?? c.opt.v).toFixed(2) + 'V'); set(`[data-psui="${c.id}"]`, Math.abs(m.i || 0).toFixed(3) + 'A');
+      const cc = document.querySelector(`[data-psucc="${c.id}"]`); if (cc) cc.setAttribute('fill', m.cc > 0.5 ? '#ff3b30' : '#333');
+    }
+    if (c.type === 'scope') {
+      const tr = tracciaOsc(c);
+      for (const ch of ['a', 'b']) {
+        const pl = document.querySelector(`[data-oscmini="${c.id}:${ch}"]`);
+        if (!pl) continue;
+        const vdiv = c.opt['v' + ch], y0 = c.opt['y' + ch];
+        pl.setAttribute('points', tr ? tr.punti.filter((_, k) => k % 4 === 0).map(q => `${(-6 + q.x * 70).toFixed(1)},${(-60 - (q[ch] / vdiv + y0) * 6.5).toFixed(1)}`).filter(s => !s.includes('NaN')).join(' ') : '');
+      }
+    }
+    if (c.type === 'gen') set(`[data-genl="${c.id}"]`, fmtSI(c.opt.f, 'Hz').replace(',000', '').replace(/,(\d*?)0+ /, (_, d) => d ? ',' + d + ' ' : ' '));
+  }
+  if (B.pannello) disegnaPannello();
+}
+// la schermata dell'oscilloscopio: aggancio (trigger) sul canale scelto, solo dentro un tratto continuo
+function tracciaOsc(c) {
+  const bf = B.osc[c.id];
+  if (!bf || bf.n < 2) return null;
+  const o = c.opt, W = o.sdiv * 10, N = bf.n, at = k => (bf.i - N + k + BUF_OSC) % BUF_OSC;   // k = 0 il più vecchio
+  const ult = at(N - 1), tUlt = bf.t[ult], trCorr = bf.tratto[ult];
+  const ch = o.trig === 'B' ? bf.b : bf.a, lv = o.livello, su = o.fronte == 1;
+  let start = -1;
+  const stato = B.oscStato[c.id] || (B.oscStato[c.id] = { fermo: null });
+  if (o.modoT === 'singolo' && stato.fermo) return stato.fermo;
+  // fronte più recente che lascia una schermata intera dopo di sé
+  for (let k = N - 2; k >= 0; k--) {
+    const i0 = at(k), i1 = at(k + 1);
+    if (bf.tratto[i0] !== trCorr) break;
+    if (bf.t[i1] > tUlt - W * 0.9) continue;
+    if (su ? ch[i0] < lv && ch[i1] >= lv : ch[i0] > lv && ch[i1] <= lv) { start = k + 1; break; }
+  }
+  let t0;
+  if (start >= 0) t0 = bf.t[at(start)] - W * 0.1;
+  else if (o.modoT === 'auto') t0 = tUlt - W;
+  else return stato.ultimo || null;
+  const punti = [];
+  for (let k = 0; k < N; k++) { const i = at(k); const t = bf.t[i]; if (t < t0 || bf.tratto[i] !== trCorr) continue; if (t > t0 + W) break; punti.push({ x: (t - t0) / W, t: t - t0, a: bf.a[i], b: bf.b[i] }); }
+  const r = { punti, t0, agganciato: start >= 0 };
+  stato.ultimo = r;
+  if (o.modoT === 'singolo' && start >= 0) stato.fermo = r;
+  return r;
+}
+// ------------------------------------------------------------------
+// pannelli (finestre sul banco, si spostano trascinando il titolo)
+function apriPannello(id) {
+  const c = B.bb.comps.find(c => c.id === id);
+  if (!c || !K.STRUMENTI.includes(c.type)) return;
+  chiudiPannello();
+  B.pannello = id;
+  const d = document.createElement('div');
+  d.className = 'strum-pan'; d.id = 'strum-pan';
+  d.innerHTML = `<div class="sp-tit"><b></b><button type="button" class="ghost small" data-chiudi title="Chiudi">✕</button></div><div class="sp-corpo"></div>`;
+  d.querySelector('b').textContent = `${c.label} — ${K.TIPI[c.type].nome}`;
+  $('.bb-wrap').append(d);
+  const pos = B.posPan || { x: 16, y: 16 };
+  d.style.left = pos.x + 'px'; d.style.top = pos.y + 'px';
+  d.querySelector('[data-chiudi]').addEventListener('click', chiudiPannello);
+  const tit = d.querySelector('.sp-tit');
+  tit.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    const x0 = e.clientX - d.offsetLeft, y0 = e.clientY - d.offsetTop;
+    try { tit.setPointerCapture(e.pointerId); } catch {}
+    const mv = ev => { B.posPan = { x: Math.max(0, ev.clientX - x0), y: Math.max(0, ev.clientY - y0) }; d.style.left = B.posPan.x + 'px'; d.style.top = B.posPan.y + 'px'; };
+    tit.addEventListener('pointermove', mv);
+    tit.addEventListener('pointerup', () => tit.removeEventListener('pointermove', mv), { once: true });
+  });
+  corpoPannello(c, d.querySelector('.sp-corpo'));
+}
+function chiudiPannello() { const d = $('#strum-pan'); if (d) d.remove(); B.pannello = null; }
+function opzStrumento(c, k, v) {
+  modifica(bb => { const x = bb.comps.find(x => x.id === c.id); x.opt[k] = v; });
+  B.oscStato[c.id] = null;
+  if (B.pannello === c.id) apriPannello(c.id);
+}
+function corpoPannello(c, box) {
+  const o = c.opt, sel = (k, vals, fmt = x => x) => `<select data-k="${k}">${vals.map(v => `<option value="${v}" ${String(v) === String(o[k]) ? 'selected' : ''}>${esc(fmt(v))}</option>`).join('')}</select>`;
+  const vals = k => K.OPZIONI[c.type].find(x => x[0] === k)[2];
+  if (c.type === 'dmm') box.innerHTML = `<div class="sp-lcd"><span data-pv>—</span><small data-pu></small></div>
+    <div class="sp-riga seg">${['V', 'A', 'Ω'].map(m => `<button type="button" data-modo="${m}" class="${o.modo === m ? 'on' : ''}">${m}</button>`).join('')}</div>
+    <div class="sp-riga seg"><button type="button" data-ac="0" class="${o.ac ? '' : 'on'}">⎓ DC</button><button type="button" data-ac="1" class="${o.ac ? 'on' : ''}">∿ AC (efficace)</button></div>
+    <p class="muted small">V: tra «V Ω» e «COM» (10 MΩ). A: in serie, tra «A» e «COM» (0,1 Ω). Ω: misura con il circuito spento (le sorgenti si scollegano da sole), 1 mA di prova.</p>`;
+  if (c.type === 'gen') box.innerHTML = `<div class="sp-riga seg">${['sin', 'quadra', 'tri'].map(f => `<button type="button" data-forma="${f}" class="${o.forma === f ? 'on' : ''}">${{ sin: '∿ Sinusoide', quadra: '⊓ Quadra', tri: '△ Triangolare' }[f]}</button>`).join('')}</div>
+    <label class="sp-campo">Frequenza <input type="number" data-n="f" min="0.1" max="${K.GEN_FMAX}" step="any" value="${o.f}"> Hz</label>
+    <label class="sp-campo">Ampiezza (di picco) <input type="number" data-n="amp" min="0" max="10" step="0.1" value="${o.amp}"> V</label>
+    <label class="sp-campo">Offset <input type="number" data-n="off" min="-10" max="10" step="0.1" value="${o.off}"> V</label>
+    <p class="muted small">Uscita con 50 Ω interni, tra «+» e «COM». Fino a ${K.GEN_FMAX / 1000} kHz; sopra 1–2 kHz il calcolo nel tempo può non stare al passo del tempo reale (lo dice la riga in basso).</p>`;
+  if (c.type === 'psu') box.innerHTML = `<label class="sp-campo">Tensione <input type="range" data-n="v" min="0" max="12" step="0.05" value="${o.v}"> <input type="number" data-n="v" min="0" max="12" step="0.05" value="${o.v}"> V</label>
+    <label class="sp-campo">Limite di corrente <input type="number" data-n="ilim" min="0.001" max="3" step="0.01" value="${o.ilim}"> A</label>
+    <div class="sp-lcd rosso"><span data-pv>—</span><small data-pu></small></div>
+    <p class="muted small">Se il carico chiede più del limite, l'alimentatore passa a corrente costante (spia CC) e la tensione scende.</p>`;
+  if (c.type === 'scope') box.innerHTML = `<canvas class="osc" width="560" height="360"></canvas>
+    <div class="sp-osc">
+      <label>Tempo/div ${sel('sdiv', vals('sdiv'), v => fmtSI(+v, 's').replace(',000', ''))}</label>
+      <label><span class="cA">A</span> V/div ${sel('va', vals('va'), v => fmtSI(+v, 'V').replace(',000', ''))}</label>
+      <label><span class="cA">A</span> posiz. <input type="number" data-n="ya" min="-10" max="10" step="0.5" value="${o.ya}"></label>
+      <label><span class="cB">B</span> V/div ${sel('vb', vals('vb'), v => fmtSI(+v, 'V').replace(',000', ''))}</label>
+      <label><span class="cB">B</span> posiz. <input type="number" data-n="yb" min="-10" max="10" step="0.5" value="${o.yb}"></label>
+      <label>Trigger ${sel('trig', ['A', 'B'])} ${sel('fronte', [1, 0], v => +v ? '↑' : '↓')}</label>
+      <label>Livello <input type="number" data-n="livello" min="-20" max="20" step="0.1" value="${o.livello}"> V</label>
+      <label>Modo ${sel('modoT', ['auto', 'normale', 'singolo'])} <button type="button" class="small" data-riarma>Riarma</button></label>
+    </div>
+    <div class="sp-cursori small mono" data-cursori>Trascina sullo schermo per i cursori T1 e T2.</div>`;
+  box.querySelectorAll('select[data-k]').forEach(s => s.addEventListener('change', () => { const v = s.value; opzStrumento(c, s.dataset.k, isNaN(+v) || s.dataset.k === 'trig' || s.dataset.k === 'modoT' ? v : +v); }));
+  box.querySelectorAll('input[data-n]').forEach(i => i.addEventListener('change', () => { const v = +i.value; if (isFinite(v)) opzStrumento(c, i.dataset.n, v); }));
+  box.querySelectorAll('[data-modo]').forEach(b => b.addEventListener('click', () => opzStrumento(c, 'modo', b.dataset.modo)));
+  box.querySelectorAll('[data-ac]').forEach(b => b.addEventListener('click', () => opzStrumento(c, 'ac', +b.dataset.ac)));
+  box.querySelectorAll('[data-forma]').forEach(b => b.addEventListener('click', () => opzStrumento(c, 'forma', b.dataset.forma)));
+  const ri = box.querySelector('[data-riarma]'); if (ri) ri.addEventListener('click', () => { B.oscStato[c.id] = null; });
+  const cv = box.querySelector('canvas.osc');
+  if (cv) {
+    const tAt = e => { const r = cv.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+    cv.addEventListener('pointerdown', e => { try { cv.setPointerCapture(e.pointerId); } catch {} const x = tAt(e); B.cursori = B.cursori && B.cursori.id === c.id ? B.cursori : { id: c.id, t1: x, t2: x }; const k = Math.abs(B.cursori.t1 - x) < Math.abs(B.cursori.t2 - x) ? 't1' : 't2'; B.cursori[k] = x; B.cursori.trasc = k; });
+    cv.addEventListener('pointermove', e => { if (B.cursori && B.cursori.trasc) B.cursori[B.cursori.trasc] = tAt(e); });
+    cv.addEventListener('pointerup', () => { if (B.cursori) B.cursori.trasc = null; });
+  }
+}
+function disegnaPannello() {
+  const c = B.bb.comps.find(c => c.id === B.pannello), d = $('#strum-pan');
+  if (!c || !d) { chiudiPannello(); return; }
+  const m = B.pub && B.pub.comp[c.id] || {};
+  const set = (sel, t) => { const x = d.querySelector(sel); if (x && x.textContent !== t) x.textContent = t; };
+  if (c.type === 'dmm') { const [v, u] = letturaDMM(c, m); set('[data-pv]', v); set('[data-pu]', ' ' + u); }
+  if (c.type === 'psu') { set('[data-pv]', `${(m.v ?? 0).toFixed(2)} V  ${Math.abs(m.i || 0).toFixed(3)} A`); set('[data-pu]', m.cc > 0.5 ? ' CC' : ' CV'); }
+  if (c.type !== 'scope') return;
+  const cv = d.querySelector('canvas.osc'), g = cv.getContext('2d'), W = cv.width, H = cv.height, o = c.opt;
+  g.fillStyle = '#06120c'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#163a28'; g.lineWidth = 1;
+  for (let i = 1; i < 10; i++) { g.beginPath(); g.moveTo(i * W / 10 + .5, 0); g.lineTo(i * W / 10 + .5, H); g.stroke(); }
+  for (let i = 1; i < 8; i++) { g.beginPath(); g.moveTo(0, i * H / 8 + .5); g.lineTo(W, i * H / 8 + .5); g.stroke(); }
+  g.strokeStyle = '#2f6b4a'; g.beginPath(); g.moveTo(W / 2 + .5, 0); g.lineTo(W / 2 + .5, H); g.moveTo(0, H / 2 + .5); g.lineTo(W, H / 2 + .5); g.stroke();
+  const tr = tracciaOsc(c);
+  const yOf = (v, ch) => H / 2 - (v / o['v' + ch] + o['y' + ch]) * H / 8;
+  for (const [ch, col] of [['a', '#ffd54a'], ['b', '#4fc3f7']]) {
+    // marcatore dello zero del canale
+    g.fillStyle = col; g.fillRect(0, yOf(0, ch) - 3, 6, 6);
+    if (!tr || !tr.punti.length) continue;
+    g.strokeStyle = col; g.lineWidth = 1.6; g.beginPath();
+    tr.punti.forEach((q, k) => { const x = q.x * W, y = yOf(q[ch], ch); if (k) g.lineTo(x, y); else g.moveTo(x, y); });
+    g.stroke();
+  }
+  // livello di trigger e cursori
+  g.strokeStyle = '#ff8a65'; g.setLineDash([4, 4]); g.beginPath(); const yt = yOf(o.livello, o.trig === 'B' ? 'b' : 'a'); g.moveTo(0, yt); g.lineTo(14, yt); g.stroke(); g.setLineDash([]);
+  g.font = '12px ui-monospace, Menlo, monospace'; g.fillStyle = '#9fd8b4';
+  g.fillText(`${fmtSI(o.sdiv, 's')}/div   A ${fmtSI(o.va, 'V')}/div   B ${fmtSI(o.vb, 'V')}/div   ${tr ? (tr.agganciato ? 'Trig ✓' : o.modoT === 'auto' ? 'Auto' : 'Attesa…') : 'nessun segnale'}${B.ritardo ? `   calcolo al ${B.ritardo}%` : ''}`, 8, H - 8);
+  const cu = B.cursori && B.cursori.id === c.id ? B.cursori : null;
+  if (cu && tr && tr.punti.length) {
+    const val = x => { let best = tr.punti[0]; for (const q of tr.punti) if (Math.abs(q.x - x) < Math.abs(best.x - x)) best = q; return best; };
+    for (const [k, col] of [['t1', '#ff5252'], ['t2', '#b388ff']]) { g.strokeStyle = col; g.beginPath(); g.moveTo(cu[k] * W, 0); g.lineTo(cu[k] * W, H); g.stroke(); g.fillStyle = col; g.fillText(k.toUpperCase(), cu[k] * W + 3, 14); }
+    const q1 = val(cu.t1), q2 = val(cu.t2), dT = Math.abs(cu.t2 - cu.t1) * o.sdiv * 10;
+    const txt = `T1 ${fmtSI(cu.t1 * o.sdiv * 10, 's')}  A ${fmtV(q1.a)} V  B ${fmtV(q1.b)} V   ·   T2 ${fmtSI(cu.t2 * o.sdiv * 10, 's')}  A ${fmtV(q2.a)} V  B ${fmtV(q2.b)} V   ·   ΔT ${fmtSI(dT, 's')}${dT > 0 ? '  1/ΔT ' + fmtSI(1 / dT, 'Hz') : ''}`;
+    set('[data-cursori]', txt);
+  }
+}
+
+// ------------------------------------------------------------------
 // Controlli: nel Registro una volta per problema (per avvio), evidenziati finché durano
 function segnala(p) {
   B.problemi.set(p.cod + ':' + p.chiave, { ...p, quando: performance.now() });
@@ -406,8 +698,10 @@ window.bbFrame = () => {
   if (!$('#bb-svg')) return;
   if (S.selId !== B.proj) { if (B.salvaT) salvaOra(); caricaProgetto(S.selId); return; }
   if (!B.caricato) return;
-  B.risolte = 0;
+  B.risolte = 0; B.budget = PASSI_FOTOGRAMMA;
   const now = performance.now();
+  // quanto del tempo analogico si riesce a calcolare (ultimo secondo)
+  if (now - (B.contaT || 0) > 1000) { B.ritardo = B.richiesti > 0 && B.fatti < B.richiesti * 0.98 ? Math.round(100 * B.fatti / B.richiesti) : 0; B.richiesti = B.fatti = 0; B.contaT = now; }
   if (!B.bb.comps.length) { mostraProblemi(now); return; }
   if (inCorsa()) {
     avanza(S.ms);
@@ -416,10 +710,14 @@ window.bbFrame = () => {
     if (B.acc && (B.acc.t >= 30 || (B.acc.t > 0 && now - (B.pubT || 0) > 300))) { B.pub = media(B.acc); B.acc = null; B.pubT = now; }
   } else {
     // scheda ferma: i pin sono tutti liberi, le alimentazioni ci sono (USB collegato)
-    if (B.haCap) { B.passoCap = Math.min(0.05, (now - ultimoFrame) / 1000 || 0.016); B.chiaveStato = ''; }
-    const r = attuale();
-    B.pub = r ? media({ t: 1, ...JSON.parse(JSON.stringify(r.riass)) }) : null;
-    if (r) rinfresca(r);
+    if (B.tempo) {
+      integra(B.ta + Math.min(0.1, (now - ultimoFrame) / 1000 || 0.016));
+      if (B.acc && (B.acc.t >= 30 || now - (B.pubT || 0) > 300)) { B.pub = media(B.acc); B.acc = null; B.pubT = now; }
+    } else {
+      const r = attuale();
+      B.pub = r ? media({ t: 1, ...JSON.parse(JSON.stringify(r.riass)) }) : null;
+      if (r) rinfresca(r);
+    }
   }
   ultimoFrame = now;
   aggiornaVista(now);
@@ -465,6 +763,7 @@ function aggiornaVista(now) {
     }
   }
   B.motT = now;
+  aggiornaStrumenti(pub);
   const ld2 = document.getElementById('bb-ld2');
   if (ld2) ld2.setAttribute('fill', pub && pub.ld2 > 5e-5 ? '#7dffad' : '#2d4a33');
   mostraProblemi(now);
@@ -516,7 +815,9 @@ function aggiornaStato() {
   const el = $('#bb-stato');
   let t = '';
   const h = B.hover;
-  if (h && B.net) {
+  const cop = h && coperto(h) ? (B.ingombri.find(r => h[0] > r.x0 && h[0] < r.x1 && h[1] > r.y0 && h[1] < r.y1) || {}).id : null;
+  if (cop) { const c = B.bb.comps.find(c => c.id === cop); t = `sotto ${c ? c.label || K.TIPI[c.type].nome : 'un componente'} (foro coperto: si collega ai suoi piedini)`; }
+  else if (h && B.net) {
     const f = K.FORI.get(K.chiave(h[0], h[1]));
     const n = B.net.nodoDi(h[0], h[1]);
     const nodo = n >= 0 ? B.net.nodi[n] : null;
@@ -532,6 +833,7 @@ function aggiornaStato() {
   const disp = B.bb.comps.filter(c => c.type === 'seg7' || c.type === 'seg7x3');
   if (!t && disp.length && B.pub) t = disp.map(c => `${c.label}: si legge «${letturaDisplay(c)}»`).join(' · ');
   if (msgFisso) t = msgFisso + (t ? '  ·  ' + t : '');
+  if (B.tempo && B.ritardo) t += (t ? ' · ' : '') + `simulazione nel tempo al ${B.ritardo}% del tempo reale (passo ${fmtSI(passoTempo(B.stato), 's')}): forme d'onda giuste, ma a tratti`;
   if (B.rallentato) { t += (t ? ' · ' : '') + 'circuito lento: alcune soluzioni rimandate'; B.rallentato = false; }
   if (el.textContent !== t) el.textContent = t;
   // evidenzia il nodo
@@ -539,7 +841,7 @@ function aggiornaStato() {
   const k = h ? h.join(',') + ':' + B.bb.wires.length + B.bb.comps.length : '';
   if (g.dataset.k === k) return;
   g.dataset.k = k;
-  if (!h || !B.net) { g.innerHTML = ''; return; }
+  if (!h || !B.net || coperto(h)) { g.innerHTML = ''; return; }
   const n = B.net.nodoDi(h[0], h[1]);
   if (n < 0) { g.innerHTML = ''; return; }
   let s = '';
@@ -558,8 +860,11 @@ function mondo(ev) {
 }
 const griglia = ([x, y]) => [Math.round(x), Math.round(y)];
 function applicaVista() {
-  const v = B.vista;
-  $('#bb-svg').setAttribute('viewBox', `${v.x * P} ${v.y * P} ${v.w * P} ${v.h * P}`);
+  const v = B.vista, svg = $('#bb-svg');
+  svg.setAttribute('viewBox', `${v.x * P} ${v.y * P} ${v.w * P} ${v.h * P}`);
+  // nomi dei pin: leggibili da ~4 px sullo schermo in su, se no spariscono
+  const scala = (svg.getBoundingClientRect().width || 1) / (v.w * P);
+  svg.classList.toggle('lontano', scala * 6.5 < 3.6);
 }
 function zoom(f, cx, cy) {
   const v = B.vista, w = Math.min(MONDO.w * 2, Math.max(12, v.w * f)), h = w * v.h / v.w;
@@ -568,11 +873,15 @@ function zoom(f, cx, cy) {
   applicaVista();
 }
 function adatta() {
+  // tutto quello che c'è: Nucleo, breadboard, componenti, fili (non lo spazio vuoto del mondo)
+  let x0 = K.NUCLEO.x - 3, y0 = K.NUCLEO.y - 2, x1 = K.BB.x + K.BB.w + 1, y1 = K.NUCLEO.y + K.NUCLEO.h + 1;
+  for (const r of B.ingombri || []) { x0 = Math.min(x0, r.x0 - 1); y0 = Math.min(y0, r.y0 - 1); x1 = Math.max(x1, r.x1 + 1); y1 = Math.max(y1, r.y1 + 2); }
+  for (const w of B.bb.wires) for (const [x, y] of w.p) { x0 = Math.min(x0, x - 1); y0 = Math.min(y0, y - 1); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1); }
   const svg = $('#bb-svg'), r = svg.getBoundingClientRect(), ar = r.height / Math.max(1, r.width) || 0.5;
-  const v = B.vista;
-  v.w = MONDO.w; v.h = MONDO.w * ar;
-  if (v.h < MONDO.h) { v.h = MONDO.h; v.w = MONDO.h / ar; }
-  v.x = MONDO.x - (v.w - MONDO.w) / 2; v.y = MONDO.y - (v.h - MONDO.h) / 2;
+  const v = B.vista, W = x1 - x0, H = y1 - y0;
+  v.w = W; v.h = W * ar;
+  if (v.h < H) { v.h = H; v.w = H / ar; }
+  v.x = x0 - (v.w - W) / 2; v.y = y0 - (v.h - H) / 2;
   applicaVista();
 }
 // cosa c'è sotto il puntatore
@@ -633,7 +942,9 @@ function scatto(id, dir) {
 const SEGNALI = [K.COLORI_FILO[2], K.COLORI_FILO[3], K.COLORI_FILO[4], K.COLORI_FILO[5], K.COLORI_FILO[6], K.COLORI_FILO[7], K.COLORI_FILO[8], K.COLORI_FILO[9]];
 const suFori = g => K.FORI.has(K.chiave(g[0], g[1]));
 const suPiedino = (g, escludi) => B.bb.comps.some(c => !(escludi && escludi.has(c.id)) && K.piediniXY(c).some(p => p.x === g[0] && p.y === g[1]));
-const terminale = g => suFori(g) || suPiedino(g);
+// foro coperto dal corpo di un componente (non dai suoi piedini): non si usa
+const coperto = g => (B.ingombri || []).some(r => g[0] > r.x0 && g[0] < r.x1 && g[1] > r.y0 && g[1] < r.y1 && !r.pins.has(g[0] + ',' + g[1]));
+const terminale = g => (suFori(g) && !coperto(g)) || suPiedino(g);
 // percorso a 90° tra due punti: dai pin della Nucleo si esce in orizzontale, dalla breadboard in verticale
 function angolo(a, b) {
   if (a[0] === b[0] || a[1] === b[1]) return [];
@@ -706,7 +1017,10 @@ function messaggioStato(t) { msgFisso = t; aggiornaStato(); }
 function ruotaSel() {
   const ids = new Set(B.sel);
   if (!ids.size) return;
-  modifica(bb => {
+  modifica(bb => ruotaInPlace(ids, bb));
+}
+function ruotaInPlace(ids, bb = B.bb) {
+  {
     for (const c of bb.comps) if (ids.has(c.id)) {
       const centro = cc => { const pp = K.piediniXY(cc), xs = pp.map(p => p.x), ys = pp.map(p => p.y); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
       const c0 = centro(c);
@@ -719,7 +1033,7 @@ function ruotaSel() {
       const cx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2), cy = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
       w.p = w.p.map(([x, y]) => [cx - (y - cy), cy + (x - cx)]);
     }
-  });
+  }
 }
 // sposta (M) / copia (C): la selezione segue il mouse fino al clic
 function iniziaMuovi(copiaPrima) {
@@ -768,7 +1082,7 @@ function wire() {
     try { svg.setPointerCapture(ev.pointerId); } catch {}
     // sposta la vista: rotella premuta o Maiuscolo+trascina
     if (ev.button === 1 || (ev.shiftKey && !B.filo)) { ev.preventDefault(); svg.classList.add('pan'); B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } }; return; }
-    if (B.posa) { const tipo = B.posa; annullaComando(); aggiungi(tipo, g[0], g[1]); return; }
+    if (B.posa) { const tipo = B.posa, rot = B.posaRot || 0; annullaComando(); aggiungi(tipo, g[0], g[1], rot); return; }
     if (B.drag && B.drag.kind === 'muovi') { finisciMuovi(); return; }
     if (B.filo) {
       const inizio = B.filo.pts[0];
@@ -779,8 +1093,9 @@ function wire() {
     if (hit.act === 'press') { premi(hit.id, true); B.drag = { kind: 'press', id: hit.id }; return; }
     if (hit.act === 'enc') { const e = B.enc[hit.id] || [0, 0, 0]; B.enc[hit.id] = [e[0], e[1], 1]; aggiornaIngressi(); B.drag = { kind: 'encsw', id: hit.id }; return; }
     const vicinoAlForo = Math.hypot(m[0] - g[0], m[1] - g[1]) < 0.42;
-    // in modalità filo, o su un foro/pin libero: parte un filo (clic-clic, o trascinando)
-    if (B.modo === 'filo' || (!hit.comp && !hit.wire && vicinoAlForo && terminale(g))) {
+    const suUnPiedino = vicinoAlForo && suPiedino(g) && !hit.act;
+    // in modalità filo, su un foro libero o sul piedino di un componente: parte un filo (clic-clic, o trascinando)
+    if (B.modo === 'filo' || suUnPiedino || (!hit.comp && !hit.wire && vicinoAlForo && terminale(g))) {
       if (B.modo === 'filo' && !terminale(g)) { messaggioStato('Un filo parte da un foro o da un pin'); return; }
       B.sel.clear(); disegnaSelezione();
       iniziaFilo(g);
@@ -811,8 +1126,7 @@ function wire() {
     const d = B.drag;
     if (B.posa) {
       $('#bb-ghost').setAttribute('transform', `translate(${g[0] * P} ${g[1] * P})`);
-      const finto = { id: '_posa', type: B.posa, x: g[0], y: g[1], rot: 0, opt: Object.fromEntries(K.OPZIONI[B.posa].map(([k, v]) => [k, v])) };
-      messaggioStato(controllaAggancio([finto]).join(' · ') || 'Clicca per posarlo · R ruota dopo · Esc annulla');
+      sagomaPosa();
       return;
     }
     $('#bb-ghost').removeAttribute('transform');
@@ -873,6 +1187,7 @@ function wire() {
   svg.addEventListener('pointerleave', () => { B.hover = null; aggiornaStato(); });
   svg.addEventListener('dblclick', ev => {
     const hit = colpito(ev);
+    if (hit.comp && !B.filo) { apriPannello(hit.comp); return; }
     if (!hit.wire || B.filo) return;
     const w = B.bb.wires.find(w => w.id === hit.wire), pf = puntoFilo(w, mondo(ev));
     if (pf.punto > 0 && pf.punto < w.p.length - 1) modifica(() => { const x = B.bb.wires.find(x => x.id === w.id); x.p.splice(pf.punto, 1); });
@@ -909,7 +1224,12 @@ function tasti(ev) {
   else if (mod && k === 'd') { ev.preventDefault(); copia(); incolla(); }
   else if (mod && k === 'a') { ev.preventDefault(); B.sel = new Set([...B.bb.comps.map(c => c.id), ...B.bb.wires.map(w => w.id)]); disegnaSelezione(); }
   else if (mod || ev.altKey) return;
-  else if (k === 'r') { ev.preventDefault(); if (B.posa) messaggioStato('Prima posa il componente, poi R'); else ruotaSel(); }
+  else if (k === 'r') {
+    ev.preventDefault();
+    if (B.posa) { B.posaRot = ((B.posaRot || 0) + 1) % 4; sagomaPosa(); }                 // prima di posarlo
+    else if (B.drag && (B.drag.kind === 'comp' || B.drag.kind === 'muovi')) { ruotaInPlace(B.sel); B.drag.mosso = true; disegnaComponenti(); const sel = B.bb.comps.filter(c => B.sel.has(c.id)); if (sel.length) messaggioStato(controllaAggancio(sel).join(' · ')); }   // mentre lo si sposta: un solo passo da annullare
+    else ruotaSel();
+  }
   else if (k === 'm') { ev.preventDefault(); iniziaMuovi(false); }
   else if (k === 'c') { ev.preventDefault(); iniziaMuovi(true); }
   else if (k === 'w') { ev.preventDefault(); if (B.hover && terminale(B.hover) && !B.filo) { impostaModo('filo'); iniziaFilo(B.hover); } else impostaModo('filo'); }
@@ -964,6 +1284,7 @@ function pannelloProprieta() {
   if (c.type === 'encoder') h += ` <button class="small" data-enc="-1">↺</button><button class="small" data-enc="1">↻</button> <span class="muted small">rotella sulla manopola, clic = SW</span>`;
   if (c.type === 'buzzer') h += ` <label class="small"><input type="checkbox" data-suono ${B.suono && B.suono.has(c.id) ? 'checked' : ''}> suono</label>`;
   if (c.type === 'button') h += ' <span class="muted small">tieni premuto il tasto nero</span>';
+  if (K.STRUMENTI.includes(c.type)) h += ' <button type="button" class="small" data-pannello>Pannello…</button> <span class="muted small">(anche con doppio clic sullo strumento)</span>';
   const q = B.ultimo && B.ultimo.res && B.ultimo.res.q.get(c.id);
   if (q && inCorsa()) h += ` <span class="small mono">${['interdizione', 'zona attiva', 'saturazione'][q.r]} · Ic ${(q.ic * 1000).toFixed(1).replace('.', ',')} mA · Ib ${(q.ib * 1000).toFixed(2).replace('.', ',')} mA · Vce ${q.vce.toFixed(2).replace('.', ',')} V</span>`;
   box.innerHTML = h;
@@ -977,6 +1298,7 @@ function pannelloProprieta() {
   const sl = box.querySelector('[data-pos]');
   if (sl) sl.addEventListener('input', () => impostaPot(c, sl.value / 100));
   box.querySelectorAll('[data-enc]').forEach(b => b.addEventListener('click', () => scatto(c.id, +b.dataset.enc)));
+  const pn = box.querySelector('[data-pannello]'); if (pn) pn.addEventListener('click', () => apriPannello(c.id));
   const su = box.querySelector('[data-suono]');
   if (su) su.addEventListener('change', () => { B.suono = B.suono || new Set(); if (su.checked) B.suono.add(c.id); else { B.suono.delete(c.id); if (typeof buzzStop === 'function') buzzStop('bb' + c.id); } });
 }
@@ -1040,9 +1362,10 @@ const CATEGORIE = [
   ['Transistor', ['npn', 'pnp']],
   ['Ingressi', ['button', 'encoder']],
   ['Uscite', ['buzzer', 'servo', 'motor']],
+  ['Strumenti', ['dmm', 'scope', 'gen', 'psu']],
 ];
 const NOME_CORTO = { res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: 'Display 1 cifra', seg7x3: 'Display 3 cifre',
-  diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC' };
+  diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC', dmm: 'Multimetro', scope: 'Oscilloscopio', gen: 'Generatore', psu: 'Alimentatore' };
 function iconaComp(tipo) {
   const c = { id: 'ico', type: tipo, x: 0, y: 0, rot: 0, opt: Object.fromEntries(K.OPZIONI[tipo].map(([k, v]) => [k, v])) };
   return `<svg viewBox="0 0 10 10" data-icona="${tipo}"><g>${compSVG(c)}</g></svg>`;
@@ -1081,7 +1404,7 @@ function palette() {
         if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
           const svg = $('#bb-svg'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
           const q = pt.matrixTransform(svg.getScreenCTM().inverse()), g = griglia([q.x / P, q.y / P]);
-          annullaComando(); aggiungi(t, g[0], g[1]);
+          const rot = B.posaRot || 0; annullaComando(); aggiungi(t, g[0], g[1], rot);
         } else annullaComando();
       };
       document.addEventListener('pointermove', muovi); document.addEventListener('pointerup', su);
@@ -1091,10 +1414,19 @@ function palette() {
 function scegli(t) {
   annullaComando();
   if (B.filo) return;
-  B.posa = t; $('#bb-svg').classList.add('posa');
+  B.posa = t; B.posaRot = 0; $('#bb-svg').classList.add('posa');
   document.querySelectorAll('.pal-voce').forEach(x => x.classList.toggle('on', x.dataset.tipo === t));
-  $('#bb-ghost').innerHTML = `<g opacity=".65">${compSVG({ id: 'ghost', type: t, opt: Object.fromEntries(K.OPZIONI[t].map(([k, d]) => [k, d])) })}</g>`;
-  messaggioStato(`${K.TIPI[t].nome}: clicca sulla breadboard dove posarlo · Esc annulla`);
+  sagomaPosa();
+  messaggioStato(`${K.TIPI[t].nome}: clicca sulla breadboard dove posarlo · R ruota · Esc annulla`);
+}
+// sagoma del componente da posare (con la rotazione scelta) e aggancio dei suoi piedini
+function sagomaPosa() {
+  const t = B.posa;
+  if (!t) return;
+  $('#bb-ghost').innerHTML = `<g opacity=".65" transform="rotate(${(B.posaRot || 0) * 90})">${compSVG({ id: 'ghost', type: t, opt: Object.fromEntries(K.OPZIONI[t].map(([k, d]) => [k, d])) })}</g>`;
+  if (!B.hover) return;
+  const finto = { id: '_posa', type: t, x: B.hover[0], y: B.hover[1], rot: B.posaRot || 0, opt: Object.fromEntries(K.OPZIONI[t].map(([k, v]) => [k, v])) };
+  messaggioStato(controllaAggancio([finto]).join(' · ') || 'Clicca per posarlo · R ruota · Esc annulla');
 }
 function monta() {
   const pane = $('#pane-breadboard');
@@ -1133,6 +1465,9 @@ function monta() {
           <tr><td><kbd>Canc</kbd> o <kbd>⌫</kbd></td><td>elimina (durante un filo: toglie l'ultimo angolo)</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>annulla il comando in corso, poi toglie la selezione</td></tr>
           <tr><td><kbd>F</kbd></td><td>adatta tutto alla finestra</td></tr>
+          <tr><td><kbd>V</kbd></td><td>cambia la vista al centro: Breadboard ↔ Scheda e dispositivi (anche dai pulsanti in alto sul banco)</td></tr>
+          <tr><td><kbd>B</kbd> (tenuto)</td><td>preme B1 sulla scheda, come prima</td></tr>
+          <tr><td><kbd>R</kbd> mentre posi o sposti</td><td>ruota il componente prima di lasciarlo</td></tr>
           <tr><td>rotella</td><td>zoom sul puntatore (sulla manopola di encoder e potenziometro: la gira)</td></tr>
           <tr><td>rotella premuta o <kbd>Maiusc</kbd>+trascina</td><td>sposta la vista</td></tr>
           <tr><td>trascina sul vuoto</td><td>rettangolo di selezione (<kbd>⌘/Ctrl</kbd>+clic aggiunge o toglie)</td></tr>
@@ -1176,4 +1511,4 @@ function monta() {
 }
 monta();
 // per le prove (strumenti/prova-breadboard-browser.mjs) e per la console
-Object.assign(B, { lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });
+Object.assign(B, { apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });

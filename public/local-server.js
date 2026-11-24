@@ -3,18 +3,18 @@
 // ascoltano /api/events. Qui fetch ed EventSource vengono intercettati e la
 // stessa API è fatta con IndexedDB (progetti per nome utente), un worker che
 // compila (clang in WebAssembly) e un worker che esegue la scheda.
-import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-24e';
-import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-24e';
-import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-24e';
+import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-24g';
+import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-24g';
+import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-24g';
 import { unzipSync, zipSync } from '../vendor/fflate/esm/browser.js';
 
 const dec = new TextDecoder();
 
-import * as CFG from './config.js?v=2026-11-24e';
-import { supabaseRemote, fintoRemote } from './remote.js?v=2026-11-24e';
-import { sincronizza } from './sync.js?v=2026-11-24e';
-import { leggiLink, esercizioPulito } from './link.js?v=2026-11-24e';
-import { pulisciBreadboard } from './circuito.js?v=2026-11-24e';
+import * as CFG from './config.js?v=2026-11-24g';
+import { supabaseRemote, fintoRemote } from './remote.js?v=2026-11-24g';
+import { sincronizza } from './sync.js?v=2026-11-24g';
+import { leggiLink, esercizioPulito } from './link.js?v=2026-11-24g';
+import { pulisciBreadboard } from './circuito.js?v=2026-11-24g';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -24,7 +24,11 @@ import { pulisciBreadboard } from './circuito.js?v=2026-11-24e';
 // account né nome, in uno spazio a parte ("link:…"); "Salvalo nei miei progetti" la copia tra i propri.
 const LINK = leggiLink(location.hash);
 const ANTEPRIMA = !!LINK && !LINK.errore;
-const ACCOUNT = CFG.HA_ACCOUNT && !ANTEPRIMA;
+let ACCOUNT = CFG.HA_ACCOUNT && !ANTEPRIMA;
+// ospite ("Continua come ospite"): tutto il sito, ma niente si salva — progetti solo in memoria (MEM),
+// nessuna scrittura in IndexedDB né in localStorage; ricaricando o chiudendo la scheda si perde tutto
+let OSPITE = false;
+const MEM = { progetti: new Map(), eliminati: new Map() };
 let user = '', shown = '';
 let remote = null, account = null;   // con account: remote.js e {id, username, email}
 if (ANTEPRIMA) user = shown = 'link:' + hashStr(location.hash);
@@ -42,9 +46,23 @@ function openDb() {
     r.onerror = () => rej(r.error);
   });
 }
-const dbp = openDb();
+let dbp = null;   // si apre solo quando serve (l'ospite non lo apre mai)
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36); }
+// negozio in memoria per l'ospite: le poche operazioni di IndexedDB che usa questo file
+function memStore(store) {
+  const m = MEM[store], k = key => JSON.stringify(key), dentro = (r, key) => (r instanceof IDBKeyRange ? r.includes(key) : k(r) === k(key));
+  const chiave = rec => store === 'progetti' ? [rec.utente, rec.nome] : [rec.utente, rec.id];
+  const ord = () => [...m.values()].sort((a, b) => k(chiave(a)) < k(chiave(b)) ? -1 : 1);
+  return {
+    get: key => ({ result: m.get(k(key)) && structuredClone(m.get(k(key))) }),
+    put: rec => { m.set(k(chiave(rec)), structuredClone(rec)); return {}; },
+    delete: r => { for (const v of [...m.values()]) if (dentro(r, chiave(v))) m.delete(k(chiave(v))); return {}; },
+    getAll: r => ({ result: ord().filter(v => r === undefined || dentro(r, chiave(v))).map(v => structuredClone(v)) }),
+  };
+}
 async function tx(mode, fn, store = 'progetti') {
+  if (OSPITE) { const out = fn(memStore(store)); return out && 'result' in out ? out.result : out; }
+  if (!dbp) dbp = openDb();
   const db = await dbp;
   return new Promise((res, rej) => {
     const t = db.transaction(store, mode);
@@ -230,7 +248,7 @@ function absorb(line) {
 
 // ------------------------------------------------------------------
 // Compilatore (worker che resta vivo: il clang da ~100 MB si carica una volta sola)
-const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-24e', import.meta.url), { type: 'module' });
+const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-24g', import.meta.url), { type: 'module' });
 let compSeq = 0;
 const compPending = new Map();
 let compReady = false;
@@ -282,7 +300,7 @@ function startSim(wasm) {
   state.startedAt = Date.now();
   state.paused = false;
   const sab = makeInput();
-  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-24e', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-24g', import.meta.url), { type: 'module' });
   const s = { worker, sab };
   sim = s;
   let buf = '', batch = [], flushT = null;
@@ -491,6 +509,17 @@ window.SV = {
   get compStato() { return compStato; },
   setUser(n) { user = shown = n; try { localStorage.setItem('sv-utente', n); } catch {} },
   get account() { return ACCOUNT ? account : null; },
+  get ospite() { return OSPITE; },
+  // ospite → account: i progetti aperti passano (in sessionStorage, solo per questa scheda) e dopo
+  // l'accesso si copiano nell'account, con un nome libero se c'è già (come l'import della fase 1)
+  async portaInAccount() {
+    const recs = await dbAll(), dec2 = new TextDecoder();
+    const dati = recs.map(r => ({ nome: r.nome, devices: r.devices ?? null, files: Object.fromEntries(Object.entries(r.files).map(([k, v]) => [k, dec2.decode(v)])) }));
+    const testo = JSON.stringify({ quando: Date.now(), progetti: dati });
+    if (testo.length > 4e6) throw new Error('I progetti sono troppo grandi da portare così: scarica lo zip e caricalo dopo aver fatto l\'accesso.');
+    sessionStorage.setItem('sv-ospite-porta', testo);
+    return dati.length;
+  },
   get remote() { return remote; },
   syncNow: () => syncNow(),
   // modifiche non ancora online (progetti cambiati qui + eliminati qui)
@@ -529,7 +558,7 @@ window.SV = {
   },
   // progetto nuovo dal modello Nucleo-F401RE (modello/nucleo-f401re.json)
   async newProject(nome) {
-    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-24e')).json();
+    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-24g')).json();
     nome = await freeName(nome);
     const enc = new TextEncoder(), files = {};
     for (const [k, v] of Object.entries(m.files)) {
@@ -613,6 +642,23 @@ async function preparaAnteprima() {
   await dbPut({ utente: user, nome: LINK.nome, files, devices: LINK.devices ? cleanDevices(LINK.devices) : null, sync: {}, modified: Date.now() });
   try { if (LINK.canali) localStorage.setItem(laKey(LINK.nome), JSON.stringify(LINK.canali)); else localStorage.removeItem(laKey(LINK.nome)); } catch {}
 }
+// progetti dell'ospite che ha scelto "Crea un account" / "Entra" (vedi SV.portaInAccount): al massimo un'ora fa
+async function portaDaOspite() {
+  let x = null;
+  try { x = JSON.parse(sessionStorage.getItem('sv-ospite-porta')); } catch {}
+  try { sessionStorage.removeItem('sv-ospite-porta'); } catch {}
+  if (!x || !Array.isArray(x.progetti) || Date.now() - x.quando > 3600000) return [];
+  const enc = new TextEncoder(), nomi = [];
+  for (const p of x.progetti.slice(0, 50)) {
+    if (!p || typeof p.nome !== 'string' || !p.files || typeof p.files !== 'object') continue;
+    const files = {};
+    for (const [k, v] of Object.entries(p.files)) if (typeof v === 'string' && !k.split('/').includes('..')) files[k] = enc.encode(v);
+    const nome = await freeName(p.nome.slice(0, 60).replace(/\//g, '-') || 'Progetto');
+    await userPut({ utente: user, nome, files, devices: p.devices ? cleanDevices(p.devices) : null, sync: {} });
+    nomi.push(nome);
+  }
+  return nomi;
+}
 // dopo "Salvalo nei miei progetti": copia dall'anteprima ai progetti dell'utente (con un nome libero)
 async function salvaDaAnteprima() {
   let x;
@@ -640,10 +686,21 @@ if (ANTEPRIMA) await preparaAnteprima();
 else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
-  const { accedi } = await import('./auth.js?v=2026-11-24e');
+  const { accedi } = await import('./auth.js?v=2026-11-24g');
   account = await accedi(remote);
-  user = 'account:' + account.id;
-  shown = account.username;
+  if (account && account.ospite) {
+    // localStorage dell'ospite: solo in memoria (temi, schede, guida… non restano nel browser)
+    const mem = new Map();
+    const finto = { getItem: k => mem.has(k) ? mem.get(k) : null, setItem: (k, v) => { mem.set(String(k), String(v)); }, removeItem: k => { mem.delete(k); }, clear: () => mem.clear(), key: i => [...mem.keys()][i] ?? null, get length() { return mem.size; } };
+    try { Object.defineProperty(window, 'localStorage', { configurable: true, get: () => finto }); } catch {}
+    OSPITE = true; ACCOUNT = false; account = null;
+    user = 'ospite'; shown = 'ospite';
+    try { sessionStorage.removeItem('sv-ospite-porta'); } catch {}
+    setSync({ stato: 'locale' });
+  } else {
+    user = 'account:' + account.id;
+    shown = account.username;
+  }
 } else if (!user) {
   // primo accesso senza account: solo il nome
   const d = document.getElementById('login');
@@ -655,13 +712,16 @@ else if (ACCOUNT) {
   }));
 }
 const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
-for (const s of ['devices.js?v=2026-11-24e', 'app.js?v=2026-11-24e', 'analizzatore.js?v=2026-11-24e', 'web-ui.js?v=2026-11-24e']) await loadScript(s);
-await import('./editor.js?v=2026-11-24e');
-await import('./condividi.js?v=2026-11-24e');
-await import('./breadboard.js?v=2026-11-24e');
-await import('./segnala.js?v=2026-11-24e');
-await import('./layout.js?v=2026-11-24e');
+const portati = ACCOUNT ? await portaDaOspite() : [];
+for (const s of ['devices.js?v=2026-11-24g', 'app.js?v=2026-11-24g', 'analizzatore.js?v=2026-11-24g', 'web-ui.js?v=2026-11-24g']) await loadScript(s);
+await import('./editor.js?v=2026-11-24g');
+await import('./condividi.js?v=2026-11-24g');
+await import('./breadboard.js?v=2026-11-24g');
+await import('./segnala.js?v=2026-11-24g');
+await import('./layout.js?v=2026-11-24g');
 if (LINK && LINK.errore) alert(LINK.errore);
+if (portati.length) { log('info', `Portati nel tuo account dalla sessione da ospite: ${portati.join(', ')}`); await loadProjects(); await selectProject(portati[0]); }
+if (OSPITE) await import('./ospite.js?v=2026-11-24g');
 if (ANTEPRIMA || salvato) {
   await loadProjects();
   await selectProject(ANTEPRIMA ? LINK.nome : salvato);

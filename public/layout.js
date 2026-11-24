@@ -26,7 +26,7 @@ document.addEventListener('pointerdown', e => {
 // scelto un progetto dall'elenco: il cassetto si chiude
 document.getElementById('projlist').addEventListener('click', e => { if (e.target.closest('.proj')) setTimeout(() => cassettoAperto(false), 120); });
 // nessun progetto ancora: si apre da solo
-setTimeout(() => { if ((!window.S || !S.selId) && !card && ls.get('sv-tour') === 'fatto') cassettoAperto(true); }, 1500);
+setTimeout(() => { if ((typeof S === 'undefined' || !S.selId) && !card && ls.get('sv-tour') === 'fatto') cassettoAperto(true); }, 1500);
 
 // ------------------------------------------------------------------
 // Pannello in basso
@@ -89,7 +89,7 @@ const PASSI = [
   { el: '#pannello .tab[data-tab="scope"]', t: '5. Guarda i segnali', p: 'Nella scheda Segnali c\'è l\'analizzatore logico dei pin; in Registro gli avvisi del laboratorio (corti, LED senza resistenza, pin oltre 25 mA).' },
 ];
 let luce = null, card = null, passo = 0;
-function chiudiTour() { luce?.remove(); card?.remove(); luce = card = null; ls.set('sv-tour', 'fatto'); if (!window.S || !S.selId) cassettoAperto(true); }
+function chiudiTour() { luce?.remove(); card?.remove(); luce = card = null; ls.set('sv-tour', 'fatto'); if (typeof S === 'undefined' || !S.selId) cassettoAperto(true); }
 function mostra(i) {
   passo = i;
   const s = PASSI[i], t = document.querySelector(s.el);
@@ -118,5 +118,33 @@ export function tour() { cassettoAperto(false); mostra(0); }
 document.addEventListener('keydown', e => { if (card && e.key === 'Escape') chiudiTour(); });
 window.addEventListener('resize', () => { if (card) mostra(passo); });
 document.getElementById('btn-tour').addEventListener('click', () => { cassettoAperto(false); tour(); });
-window.SVlayout = { tour, cassettoAperto, pannelloChiuso, impostaH };
+// ------------------------------------------------------------------
+// Vista al centro: Breadboard o Scheda e dispositivi (Nucleo disegnata, Dispositivi, interrupt).
+// Una sola delle due al centro; la scelta resta per progetto (e come ultima scelta in generale).
+// La simulazione non si ferma: tutte e due si aggiornano anche quando non si vedono.
+const chiaveVista = () => 'sv-vista:' + ((typeof S !== 'undefined' && S.selId) || '');
+export function vista(v, salva = true) {
+  if (v !== 'scheda') v = 'breadboard';
+  document.getElementById('pane-breadboard').hidden = v !== 'breadboard';
+  document.getElementById('vista-scheda').hidden = v !== 'scheda';
+  document.querySelectorAll('.vista-btn').forEach(b => { b.classList.toggle('on', b.dataset.vista === v); b.setAttribute('aria-selected', b.dataset.vista === v); });
+  document.body.dataset.vista = v;
+  if (salva) { ls.set(chiaveVista(), v); ls.set('sv-vista', v); }
+  if (typeof S !== 'undefined') S.dirty = true;
+  window.dispatchEvent(new Event('resize'));
+}
+document.querySelectorAll('.vista-btn').forEach(b => b.addEventListener('click', () => vista(b.dataset.vista)));
+let progettoVista = null;
+setInterval(() => { const id = typeof S !== 'undefined' && S.selId; if (id !== progettoVista) { progettoVista = id; vista(ls.get(chiaveVista()) || ls.get('sv-vista') || 'breadboard', false); } }, 300);
+vista(ls.get('sv-vista') || 'breadboard', false);
+// V = cambia vista (B no: è già il pulsante B1 della scheda; non mentre si scrive o con una finestra aperta)
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (e.ctrlKey || e.metaKey || e.altKey || (t && t.closest && t.closest('input, textarea, select, [contenteditable], .cm-editor'))) return;
+  if (document.querySelector('dialog[open]') || card) return;
+  const k = e.key.toLowerCase();
+  if (k === 'v' && !e.repeat) { e.preventDefault(); vista(document.body.dataset.vista === 'scheda' ? 'breadboard' : 'scheda'); }
+});
+
+window.SVlayout = { tour, cassettoAperto, pannelloChiuso, impostaH, vista };
 if (ls.get('sv-tour') !== 'fatto' && !document.body.classList.contains('anteprima')) setTimeout(tour, 1200);

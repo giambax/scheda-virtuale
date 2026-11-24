@@ -6,8 +6,8 @@
 <title>Scheda Virtuale STM32</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='6' width='20' height='20' rx='2' fill='%23222' transform='rotate(45 16 16)'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%233ddc84'/%3E%3C/svg%3E">
 <script>try { document.documentElement.dataset.theme = localStorage.getItem('sv-tema') || 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }</script>
-<link rel="stylesheet" href="style.css?v=2026-11-24e">
-<link rel="stylesheet" href="web.css?v=2026-11-24e">
+<link rel="stylesheet" href="style.css?v=2026-11-24g">
+<link rel="stylesheet" href="web.css?v=2026-11-24g">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -109,24 +109,12 @@ if ('serviceWorker' in navigator) {
     <div id="banner" class="banner" hidden></div>
     <div id="dbgbar" class="dbgbar" hidden></div>
     <div id="dbgpanel" class="card dbgpanel" hidden></div>
+    <div class="banco-viste" role="tablist" aria-label="Vista al centro">
+      <button type="button" class="vista-btn on" data-vista="breadboard" role="tab" title="Breadboard: componenti, fili e strumenti (V cambia vista)">Breadboard</button>
+      <button type="button" class="vista-btn" data-vista="scheda" role="tab" title="La Nucleo disegnata, i Dispositivi collegati ai pin e gli interrupt (V cambia vista)">Scheda e dispositivi</button>
+    </div>
     <div id="pane-breadboard" class="banco-bb"></div>
-  </section>
-
-  <section class="side pannello" id="pannello">
-    <div class="pannello-maniglia" id="pannello-maniglia" title="Trascina per alzare o abbassare il pannello (doppio clic: apri/chiudi)"></div>
-    <nav class="tabs" role="tablist">
-      <button class="tab" data-tab="code">Codice</button>
-      <button class="tab" data-tab="serial">Seriale <span id="serial-dot" class="dot" hidden></span></button>
-      <button class="tab" data-tab="scope">Segnali</button>
-      <button class="tab" data-tab="log">Registro <span id="log-count" class="count" hidden>0</span></button>
-      <button class="tab active" data-tab="pins">Pin</button>
-      <button class="tab" data-tab="scheda">Scheda e dispositivi</button>
-      <button class="tab" data-tab="vars" hidden>Variabili</button>
-      <span class="tabs-sp"></span>
-      <button id="pannello-su" class="ghost small icona" type="button" title="Pannello più grande / più piccolo">▴</button>
-    </nav>
-
-    <div class="pane" id="pane-scheda">
+    <div id="vista-scheda" class="vista-scheda" hidden>
       <div class="scheda-grid">
         <div class="boardwrap"><div id="board"></div></div>
         <div class="scheda-col">
@@ -138,6 +126,20 @@ if ('serviceWorker' in navigator) {
         </div>
       </div>
     </div>
+  </section>
+
+  <section class="side pannello" id="pannello">
+    <div class="pannello-maniglia" id="pannello-maniglia" title="Trascina per alzare o abbassare il pannello (doppio clic: apri/chiudi)"></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" data-tab="code">Codice</button>
+      <button class="tab" data-tab="serial">Seriale <span id="serial-dot" class="dot" hidden></span></button>
+      <button class="tab" data-tab="scope">Segnali</button>
+      <button class="tab" data-tab="log">Registro <span id="log-count" class="count" hidden>0</span></button>
+      <button class="tab active" data-tab="pins">Pin</button>
+      <button class="tab" data-tab="vars" hidden>Variabili</button>
+      <span class="tabs-sp"></span>
+      <button id="pannello-su" class="ghost small icona" type="button" title="Pannello più grande / più piccolo">▴</button>
+    </nav>
 
     <div class="pane" id="pane-vars">
       <div id="vars" class="vars"><p class="empty">Avvia un progetto: qui vedi le variabili globali e <code>static</code> del programma che cambiano mentre gira.</p></div>
@@ -276,6 +278,7 @@ if ('serviceWorker' in navigator) {
     <button type="button" class="social social-github" data-provider="github" hidden><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg><span>Continua con GitHub</span></button>
     <div class="acc-oppure small muted"><span>oppure con nome utente (o email) e password</span></div>
   </div>
+  <div class="acc-ospite"><button type="button" id="acc-ospite" class="ghost">Continua come ospite</button><span class="muted small">usi tutto il sito, ma niente viene salvato</span></div>
   <form id="acc-entra" data-pane="entra">
     <label>Nome utente o email<input id="acc-login" type="text" required autocomplete="username" autocapitalize="none" spellcheck="false"></label>
     <label>Password<input id="acc-pw" type="password" required autocomplete="current-password"></label>
@@ -364,6 +367,6 @@ if ('serviceWorker' in navigator) {
   </form>
 </dialog>
 
-<script type="module" src="local-server.js?v=2026-11-24e"></script>
+<script type="module" src="local-server.js?v=2026-11-24g"></script>
 </body>
 </html>

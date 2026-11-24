@@ -59,3 +59,23 @@
 .acc-metodi { display: flex; flex-direction: column; gap: 6px; }
 .acc-metodi .riga { justify-content: space-between; }
 .acc-tabs[hidden] { display: none; }
+/* Condividi / Esercizio (condividi.js) */
+.anteprima { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; }
+.anteprima p { margin: 4px 0 8px; }
+body.anteprima .utente, body.anteprima .carica, body.anteprima #progazioni, body.anteprima #btn-refresh { display: none !important; }
+.consegna { border-bottom: 1px solid var(--border); padding: 6px 10px; max-height: 40%; overflow: auto; flex-shrink: 0; }
+.consegna summary { cursor: pointer; }
+.consegna-testo { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.consegna-testo h4 { margin: 8px 0 4px; font-size: 14px; }
+.consegna-testo p, .consegna-testo ul { margin: 4px 0; }
+.consegna-testo code, .consegna-testo pre { font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
+.consegna-testo pre { padding: 6px 8px; white-space: pre-wrap; }
+.edtab .ro { font-style: normal; font-size: 10px; }
+.condividi { max-width: min(560px, calc(100vw - 32px)); }
+.condividi label { display: block; margin: 6px 0; }
+.condividi input[type=text], .condividi textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 5px 7px; margin-top: 3px; }
+#cond-link { font: 11px ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+.cond-file { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 8px; }
+.condividi .avviso { color: var(--err, #d33); }
+.condividi .ok { color: var(--ok, #2a2); }
+.condividi .right { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }

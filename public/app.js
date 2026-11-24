@@ -595,7 +595,7 @@ function renderProjects() {
   const runningId = S.server.project && S.server.project.id;
   const live = ['running', 'building'].includes(S.server.status);
   $('#projlist').innerHTML = Object.entries(byWs).map(([ws, ps]) => `<div class="ws">${esc(ws)}</div>` + ps.map(p => `
-    <button class="proj${p.id === S.selId ? ' sel' : ''}${p.supported ? '' : ' unsup'}" data-id="${p.id}" title="${esc(p.path)}">
+    <button class="proj${p.id === S.selId ? ' sel' : ''}${p.supported ? '' : ' unsup'}" data-id="${esc(p.id)}" title="${esc(p.path)}">
       <span class="n">${esc(p.name)}${p.id === runningId && live ? '<span class="live"></span>' : ''}</span>
       <span class="m">${esc(p.board || p.mcu || 'micro sconosciuto')} · ${ago(p.modified)}${p.supported ? '' : ' · non supportato'}</span>
     </button>`).join('')).join('') || '<p class="muted small">Nessun progetto trovato in ~/STM32CubeIDE.</p>';

@@ -71,7 +71,7 @@ function laReset() {
   LA.auto = !LA.want;
   laButtons();
 }
-const laStoreKey = () => 'sv-la-ch:' + (S.selId ?? '');
+const laStoreKey = () => 'sv-la-ch:' + (window.SV && SV.anteprima ? 'link:' : '') + (S.selId ?? '');   // anteprima da link: chiavi a parte
 function laLoad() { try { const v = JSON.parse(localStorage.getItem(laStoreKey())); return Array.isArray(v) ? v : null; } catch { return null; } }
 function laSave() { try { if (LA.want) localStorage.setItem(laStoreKey(), JSON.stringify(LA.want)); else localStorage.removeItem(laStoreKey()); } catch {} }
 const laNow = () => Math.max(LA.lastT, S.ms * 1000);

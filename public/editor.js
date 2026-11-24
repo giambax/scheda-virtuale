@@ -14,8 +14,10 @@ const E = {
 
 const dark = () => matchMedia('(prefers-color-scheme: dark)').matches || document.documentElement.dataset.theme === 'dark';
 
-function extensions() {
+// ro: file in sola lettura (dato da un esercizio)
+function extensions(ro) {
   return [
+    ...(ro ? [CM.EditorState.readOnly.of(true)] : []),
     CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(), CM.history(), CM.foldGutter(),
     CM.drawSelection(), CM.dropCursor(), CM.indentOnInput(), CM.bracketMatching(), CM.closeBrackets(),
     CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightActiveLine(), CM.highlightSelectionMatches(),
@@ -54,7 +56,7 @@ function show(rel, line) {
   if (!f) return;
   if (E.cur && E.cur !== rel) E.states.set(E.cur, view.state);
   if (!E.states.has(rel)) {
-    E.states.set(rel, CM.EditorState.create({ doc: f.content, extensions: extensions() }));
+    E.states.set(rel, CM.EditorState.create({ doc: f.content, extensions: extensions(f.ro) }));
     E.saved.set(rel, f.content);
   }
   if (!E.open.includes(rel)) E.open.push(rel);
@@ -84,7 +86,7 @@ function renderTabs() {
   el.innerHTML = E.open.map(rel => {
     const f = fileOf(rel) || { name: rel };
     const err = errsFor(rel).length > 0;
-    return `<span class="edtab${rel === E.cur ? ' on' : ''}${err ? ' haserr' : ''}" data-f="${esc(rel)}" title="${esc(rel)}">${esc(f.name)}${isDirty(rel) ? '<i class="dirty" title="non salvato">●</i>' : ''}<b class="x" title="Chiudi">×</b></span>`;
+    return `<span class="edtab${rel === E.cur ? ' on' : ''}${err ? ' haserr' : ''}" data-f="${esc(rel)}" title="${esc(rel)}">${f.ro ? '<i class="ro" title="Sola lettura (lo dà l\'esercizio)">🔒</i>' : ''}${esc(f.name)}${isDirty(rel) ? '<i class="dirty" title="non salvato">●</i>' : ''}<b class="x" title="Chiudi">×</b></span>`;
   }).join('');
   el.querySelectorAll('.edtab').forEach(t => t.addEventListener('click', ev => {
     if (ev.target.classList.contains('x')) close(t.dataset.f); else show(t.dataset.f);
@@ -97,7 +99,7 @@ function renderTabs() {
 // salva i file cambiati nel browser (IndexedDB) e ricompila
 async function saveAll() {
   if (E.cur) E.states.set(E.cur, view.state);
-  const changed = E.open.filter(isDirty);
+  const changed = E.open.filter(rel => isDirty(rel) && !(fileOf(rel) || {}).ro);   // i file in sola lettura non si salvano
   for (const rel of changed) {
     const t = textOf(rel);
     await SV.saveFile(E.proj, rel, t);
@@ -129,7 +131,7 @@ window.renderFiles = function () {
       const f = fileOf(rel);
       if (!f) { E.states.delete(rel); E.open = E.open.filter(r => r !== rel); continue; }
       if (!isDirty(rel) && f.content !== E.saved.get(rel)) {
-        E.states.set(rel, CM.EditorState.create({ doc: f.content, extensions: extensions() }));
+        E.states.set(rel, CM.EditorState.create({ doc: f.content, extensions: extensions(f.ro) }));
         E.saved.set(rel, f.content);
         if (rel === E.cur) E.cur = null;
       }

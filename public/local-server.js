@@ -13,15 +13,21 @@ const dec = new TextDecoder();
 import * as CFG from './config.js';
 import { supabaseRemote, fintoRemote } from './remote.js';
 import { sincronizza } from './sync.js';
+import { leggiLink, esercizioPulito } from './link.js';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
 // Senza account (config.js vuoto): "utente" è solo un nome scelto, come nella fase 1.
 // Con account: "utente" = 'account:<id>' (la copia locale dei progetti online, per l'offline).
-const ACCOUNT = CFG.HA_ACCOUNT;
+// Aperto da un link "Condividi"/"Esercizio" (#progetto=… / #esercizio=…, link.js): anteprima senza
+// account né nome, in uno spazio a parte ("link:…"); "Salvalo nei miei progetti" la copia tra i propri.
+const LINK = leggiLink(location.hash);
+const ANTEPRIMA = !!LINK && !LINK.errore;
+const ACCOUNT = CFG.HA_ACCOUNT && !ANTEPRIMA;
 let user = '', shown = '';
 let remote = null, account = null;   // con account: remote.js e {id, username, email}
-if (!ACCOUNT) try { user = shown = localStorage.getItem('sv-utente') || ''; } catch {}
+if (ANTEPRIMA) user = shown = 'link:' + hashStr(location.hash);
+else if (!ACCOUNT) try { user = shown = localStorage.getItem('sv-utente') || ''; } catch {}
 
 function openDb() {
   return new Promise((res, rej) => {
@@ -36,6 +42,7 @@ function openDb() {
   });
 }
 const dbp = openDb();
+function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36); }
 async function tx(mode, fn, store = 'progetti') {
   const db = await dbp;
   return new Promise((res, rej) => {
@@ -64,7 +71,7 @@ async function userPut(rec) {
 // (più progetti), uno zip fatto su Windows (\ nei nomi) o un progetto "sciolto" con
 // solo i .c/.h e il .ioc. Header CMSIS/HAL e Debug/ non si tengono: li dà il sito.
 const SKIP_DIR = /(^|\/)(Drivers|Middlewares|Debug|Release|__MACOSX|\.settings|\.metadata)\//;
-const USEFUL = f => /\.(c|h)$/.test(f) || /(^|\/)[^/]+\.ioc$/.test(f) || /(^|\/)\.cproject$/.test(f) || /(^|\/)\.scheda-virtuale\.json$/.test(f);
+const USEFUL = f => /\.(c|h)$/.test(f) || /(^|\/)[^/]+\.ioc$/.test(f) || /(^|\/)\.cproject$/.test(f) || /(^|\/)\.(scheda-virtuale|esercizio)\.json$/.test(f);
 const base = f => f.split('/').pop();
 
 export function findProjects(input, fallback = 'progetto') {
@@ -137,11 +144,17 @@ function iocOf(rec) {
   if (!iocName && rec.files['Core/Inc/main.h']) ioc.pins = pinsFromMainH(dec.decode(rec.files['Core/Inc/main.h']));
   return ioc;
 }
+// consegna di un esercizio (file ".esercizio.json" nel progetto, vedi link.js) o null
+function esercizioOf(rec) {
+  const f = rec.files['.esercizio.json'];
+  if (!f) return null;
+  try { return esercizioPulito(JSON.parse(dec.decode(f)), rec.files); } catch { return null; }
+}
 function info(rec) {
   const ioc = iocOf(rec);
   const dev = mcuDefine(ioc.mcu);
   return {
-    id: rec.nome, name: rec.nome, workspace: 'Progetti di ' + shown, path: rec.nome,
+    id: rec.nome, name: rec.nome, workspace: ANTEPRIMA ? 'Aperto da un link' : 'Progetti di ' + shown, path: rec.nome,
     mcu: ioc.mcu || (ioc.file ? '' : 'STM32F401RETx?'), board: ioc.board || (ioc.file ? '' : 'senza .ioc: NUCLEO-F401RE'), modified: rec.modified, elfTime: 0,
     supported: !ioc.file || /^STM32F40?1|^STM32F411/i.test(ioc.mcu || '') || dev === 'STM32F401xE',
   };
@@ -156,7 +169,8 @@ function projectFiles(rec) {
   const src = Object.keys(rec.files).filter(f => /^Core\/Src\/[^/]+\.c$/.test(f) && !skip.has(f.slice(9)))
     .sort((a, b) => (order.indexOf(a.slice(9)) + 1 || 99) - (order.indexOf(b.slice(9)) + 1 || 99) || a.localeCompare(b));
   const inc = Object.keys(rec.files).filter(f => /^Core\/Inc\/[^/]+\.h$/.test(f) && !/^stm32f4xx_(hal_conf|it)\.h$/.test(f.slice(9))).sort();
-  return [...src, ...inc].map(rel => ({ name: rel.split('/').pop(), rel, content: dec.decode(rec.files[rel]) }));
+  const sola = (esercizioOf(rec) || { sola: [] }).sola;
+  return [...src, ...inc].map(rel => ({ name: rel.split('/').pop(), rel, content: dec.decode(rec.files[rel]), ro: sola.includes(rel) }));
 }
 
 // ------------------------------------------------------------------
@@ -488,7 +502,7 @@ window.SV = {
   async oldUsers() {
     const all = await tx('readonly', s => s.getAll());
     const m = {};
-    for (const r of all) if (!String(r.utente).startsWith('account:')) m[r.utente] = (m[r.utente] || 0) + 1;
+    for (const r of all) if (!/^(account|link):/.test(r.utente)) m[r.utente] = (m[r.utente] || 0) + 1;
     return m;
   },
   // copia nell'account i progetti di un vecchio nome (quelli originali restano dove sono)
@@ -544,6 +558,7 @@ window.SV = {
   // salva un file modificato nel sito
   async saveFile(nome, rel, content) {
     const rec = await dbGet(nome);
+    if ((esercizioOf(rec) || { sola: [] }).sola.includes(rel)) throw new Error(rel.split('/').pop() + ' è in sola lettura (lo dà l\'esercizio)');
     rec.files[rel] = new TextEncoder().encode(content);
     await userPut(rec);
   },
@@ -555,14 +570,64 @@ window.SV = {
     return zipSync(tree, { level: 6 });
   },
   log,
+  // --- Condividi / Esercizio (condividi.js) ---
+  get anteprima() { return ANTEPRIMA ? { nome: LINK.nome, tipo: LINK.tipo } : null; },
+  async esercizio(nome) { const rec = await dbGet(nome); return rec ? esercizioOf(rec) : null; },
+  // quello che va nel link: file come testo, dispositivi, canali dell'analizzatore, consegna
+  async perLink(nome) {
+    const rec = await dbGet(nome);
+    const files = {};
+    for (const [k, v] of Object.entries(rec.files)) if (k !== '.esercizio.json') files[k] = dec.decode(v);
+    let canali = null;
+    try { canali = JSON.parse(localStorage.getItem(laKey(nome))); } catch {}
+    return { nome, files, devices: Array.isArray(rec.devices) ? rec.devices : null, canali: Array.isArray(canali) ? canali : null, esercizio: esercizioOf(rec) };
+  },
+  // anteprima → "Salvalo nei miei progetti": si ricarica la pagina normale, che la copia (vedi in fondo)
+  salvaAnteprima() {
+    sessionStorage.setItem('sv-da-salvare', JSON.stringify({ ns: user, nome: LINK.nome }));
+    location.replace(location.pathname + location.search);
+  },
 };
+// canali scelti a mano nell'analizzatore (analizzatore.js usa la stessa chiave)
+function laKey(nome) { return 'sv-la-ch:' + (ANTEPRIMA ? 'link:' : '') + nome; }
+
+// anteprima: il progetto del link, sempre nuovo a ogni apertura (le prove fatte qui si perdono ricaricando)
+async function preparaAnteprima() {
+  const enc = new TextEncoder(), files = {};
+  for (const [k, v] of Object.entries(LINK.files)) files[k] = enc.encode(v);
+  if (LINK.esercizio) files['.esercizio.json'] = enc.encode(JSON.stringify(LINK.esercizio));
+  // via le anteprime di altri link aperte più di un giorno fa
+  const vecchie = await tx('readonly', s => s.getAll(IDBKeyRange.bound(['link:', ''], ['link:\uffff', '\uffff'])));
+  for (const r of vecchie) if (r.utente !== user && Date.now() - (r.modified || 0) > 86400000) await tx('readwrite', s => s.delete([r.utente, r.nome]));
+  for (const r of await dbAll()) await dbDel(r.nome);
+  await dbPut({ utente: user, nome: LINK.nome, files, devices: LINK.devices ? cleanDevices(LINK.devices) : null, sync: {}, modified: Date.now() });
+  try { if (LINK.canali) localStorage.setItem(laKey(LINK.nome), JSON.stringify(LINK.canali)); else localStorage.removeItem(laKey(LINK.nome)); } catch {}
+}
+// dopo "Salvalo nei miei progetti": copia dall'anteprima ai progetti dell'utente (con un nome libero)
+async function salvaDaAnteprima() {
+  let x;
+  try { x = JSON.parse(sessionStorage.getItem('sv-da-salvare')); } catch {}
+  sessionStorage.removeItem('sv-da-salvare');
+  if (!x || typeof x.ns !== 'string' || !x.ns.startsWith('link:')) return null;
+  const rec = await tx('readonly', s => s.get([x.ns, x.nome]));
+  if (!rec) return null;
+  const nome = await freeName(rec.nome);
+  await userPut({ utente: user, nome, files: rec.files, devices: rec.devices, sync: {} });
+  try {
+    const ch = localStorage.getItem('sv-la-ch:link:' + rec.nome);
+    if (ch) localStorage.setItem('sv-la-ch:' + nome, ch); else localStorage.removeItem('sv-la-ch:' + nome);
+  } catch {}
+  await tx('readwrite', s => s.delete(IDBKeyRange.bound([x.ns, ''], [x.ns, '\uffff'])));
+  return nome;
+}
 
 // ------------------------------------------------------------------
 // Avvio dell'interfaccia: gli script "classici" della versione per Mac, in ordine
 function loadScript(src) {
   return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.body.appendChild(s); });
 }
-if (ACCOUNT) {
+if (ANTEPRIMA) await preparaAnteprima();
+else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
   const { accedi } = await import('./auth.js');
@@ -579,8 +644,17 @@ if (ACCOUNT) {
     if (n) { window.SV.setUser(n); res(); }
   }));
 }
+const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
 for (const s of ['devices.js', 'app.js', 'analizzatore.js', 'web-ui.js']) await loadScript(s);
 await import('./editor.js');
+await import('./condividi.js');
+if (LINK && LINK.errore) alert(LINK.errore);
+if (ANTEPRIMA || salvato) {
+  await loadProjects();
+  await selectProject(ANTEPRIMA ? LINK.nome : salvato);
+  if (salvato) log('info', `Salvato nei tuoi progetti: ${salvato}`);
+  window.dispatchEvent(new CustomEvent('sv-aperto-da-link'));
+}
 if (ACCOUNT) {
   syncNow();
   setInterval(syncNow, 60000);

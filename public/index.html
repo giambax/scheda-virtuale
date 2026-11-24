@@ -59,6 +59,11 @@ if ('serviceWorker' in navigator) {
 
 <main class="layout">
   <aside class="projects">
+    <div id="anteprima" class="anteprima" hidden>
+      <b id="ant-titolo"></b>
+      <p class="small">Una copia arrivata con un link: puoi provarla e cambiarla qui, ma ricaricando la pagina torna com'era. L'originale di chi l'ha condivisa non cambia.</p>
+      <button id="btn-salva-copia" class="primary small">Salvalo nei miei progetti</button>
+    </div>
     <div class="ph">
       <h2>Progetti</h2>
       <button id="btn-refresh" class="ghost small" title="Aggiorna l'elenco">↻</button>
@@ -78,6 +83,8 @@ if ('serviceWorker' in navigator) {
       <span class="muted small">Progetto:</span>
       <button id="btn-rinomina" class="ghost small">Rinomina</button>
       <button id="btn-esporta1" class="ghost small" title="Scarica solo questo progetto (.zip)">⬇ Zip</button>
+      <button id="btn-condividi" class="ghost small" title="Un link con una copia di questo progetto (file, dispositivi, canali dei Segnali): chi lo apre la prova e può salvarsela. Il tuo progetto non cambia.">🔗 Condividi</button>
+      <button id="btn-esercizio" class="ghost small" title="Un link «esercizio»: titolo, consegna e questo progetto come partenza (anche con file in sola lettura)">📝 Esercizio</button>
       <button id="btn-elimina" class="ghost small danger">Elimina</button>
     </div>
     <div id="comp-stato" class="comp-stato muted small"></div>
@@ -155,6 +162,10 @@ if ('serviceWorker' in navigator) {
     </div>
 
     <div class="pane" id="pane-code">
+      <details id="consegna" class="consegna" open hidden>
+        <summary><span class="muted small">Esercizio</span> <b id="consegna-titolo"></b></summary>
+        <div id="consegna-testo" class="consegna-testo"></div>
+      </details>
       <div class="codebar">
         <div id="edtabs" class="edtabs"></div>
         <select id="edopen" title="Apri un altro file del progetto"></select>
@@ -266,6 +277,27 @@ if ('serviceWorker' in navigator) {
     <div class="riga"><button id="btn-elimina-account" type="button" class="danger">Elimina l'account…</button></div>
     <p id="acc-io-msg" class="acc-msg" role="status"></p>
     <div class="right"><button id="btn-esci" type="button">Esci</button> <button class="primary">Chiudi</button></div>
+  </form>
+</dialog>
+
+<dialog id="condividi" class="condividi">
+  <form method="dialog">
+    <h2 id="cond-titolo">Condividi</h2>
+    <p id="cond-spiega" class="small"></p>
+    <div id="cond-es" hidden>
+      <label>Titolo<input id="cond-es-titolo" type="text" maxlength="120" placeholder="es. Cronometro su 3 cifre"></label>
+      <label>Consegna <span class="muted small">(testo semplice; vanno **grassetto**, *corsivo*, `codice`, righe che iniziano con # (titolo) o - (elenco))</span>
+        <textarea id="cond-es-testo" rows="7" maxlength="20000"></textarea></label>
+      <div class="small">File in sola lettura (chi lo apre non può cambiarli):</div>
+      <div id="cond-es-file" class="cond-file small"></div>
+      <div class="right"><button type="button" id="cond-crea" class="primary">Crea il link</button></div>
+    </div>
+    <div id="cond-out" hidden>
+      <textarea id="cond-link" rows="3" readonly spellcheck="false"></textarea>
+      <div id="cond-lung" class="small"></div>
+      <div class="right"><span id="cond-copiato" class="small ok" hidden>Copiato ✓</span> <button type="button" id="cond-copia" class="primary">Copia link</button></div>
+    </div>
+    <div class="right"><button value="chiudi">Chiudi</button></div>
   </form>
 </dialog>
 

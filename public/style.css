@@ -530,3 +530,15 @@ body[data-vista="breadboard"] .vista-btn.on { background: var(--panel); }
 .vista-scheda { flex: 1; min-height: 0; overflow: auto; }
 .vista-scheda .scheda-grid { grid-template-columns: minmax(300px, 520px) minmax(0, 1fr); max-width: 1300px; margin: 0 auto; padding: 16px; }
 .vista-scheda #board { max-width: 520px; }
+
+/* vista Schema (schema.js) */
+.vista-schema { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sch-wrap { flex: 1; min-height: 0; background: var(--sch-carta); }
+#sch-svg { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; color: var(--sch-tratto); --sch-fondo: var(--sch-carta); }
+:root { --sch-carta: #fbfbf8; --sch-tratto: #1d2430; --sch-aperto: #c62828; --sch-etichetta: #0a5bb5; }
+:root[data-theme="dark"] { --sch-carta: #12161c; --sch-tratto: #dfe5ee; --sch-aperto: #ff6b6b; --sch-etichetta: #7cb4ff; }
+.sch-filo { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.sch-sim { cursor: move; }
+.sch-sim.sch-sel { color: var(--accent); }
+.sch-lab text { font-family: sans-serif !important; }
+.sch-barra { display: flex; gap: 6px; align-items: center; }

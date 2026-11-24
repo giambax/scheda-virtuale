@@ -123,15 +123,18 @@ document.getElementById('btn-tour').addEventListener('click', () => { cassettoAp
 // Una sola delle due al centro; la scelta resta per progetto (e come ultima scelta in generale).
 // La simulazione non si ferma: tutte e due si aggiornano anche quando non si vedono.
 const chiaveVista = () => 'sv-vista:' + ((typeof S !== 'undefined' && S.selId) || '');
+const VISTE = ['breadboard', 'schema', 'scheda'];
 export function vista(v, salva = true) {
-  if (v !== 'scheda') v = 'breadboard';
+  if (!VISTE.includes(v)) v = 'breadboard';
   document.getElementById('pane-breadboard').hidden = v !== 'breadboard';
+  document.getElementById('vista-schema').hidden = v !== 'schema';
   document.getElementById('vista-scheda').hidden = v !== 'scheda';
   document.querySelectorAll('.vista-btn').forEach(b => { b.classList.toggle('on', b.dataset.vista === v); b.setAttribute('aria-selected', b.dataset.vista === v); });
   document.body.dataset.vista = v;
   if (salva) { ls.set(chiaveVista(), v); ls.set('sv-vista', v); }
   if (typeof S !== 'undefined') S.dirty = true;
   window.dispatchEvent(new Event('resize'));
+  window.dispatchEvent(new CustomEvent('sv-vista', { detail: v }));
 }
 document.querySelectorAll('.vista-btn').forEach(b => b.addEventListener('click', () => vista(b.dataset.vista)));
 let progettoVista = null;
@@ -143,7 +146,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey || (t && t.closest && t.closest('input, textarea, select, [contenteditable], .cm-editor'))) return;
   if (document.querySelector('dialog[open]') || card) return;
   const k = e.key.toLowerCase();
-  if (k === 'v' && !e.repeat) { e.preventDefault(); vista(document.body.dataset.vista === 'scheda' ? 'breadboard' : 'scheda'); }
+  if (k === 'v' && !e.repeat) { e.preventDefault(); vista(VISTE[(VISTE.indexOf(document.body.dataset.vista) + 1) % VISTE.length]); }
 });
 
 window.SVlayout = { tour, cassettoAperto, pannelloChiuso, impostaH, vista };

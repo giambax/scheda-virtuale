@@ -191,6 +191,16 @@ export function pulisciBreadboard(d) {
     const p = w.p.slice(0, MAX_PIEGHE + 2).map(q => [coord(q && q[0]), coord(q && q[1])]);
     out.wires.push({ id: id(w.id, 'w'), p, col: COLORI_FILO.includes(w.col) ? w.col : COLORI_FILO[3] });
   }
+  // posizioni dei simboli nella vista schema (schema.js): { id: [x, y, rot] }, solo per componenti che ci sono
+  // (più "nucleo" per il blocco della scheda); se mancano si dispongono da soli
+  if (d.schema && typeof d.schema === 'object' && !Array.isArray(d.schema)) {
+    const ok = new Set([...out.comps.map(c => c.id), 'nucleo']), sch = {};
+    for (const [k, v] of Object.entries(d.schema).slice(0, MAX_COMP + 1)) {
+      if (!ok.has(k) || !Array.isArray(v)) continue;
+      sch[k] = [Math.round(num(v[0], -500, 1500, 0)), Math.round(num(v[1], -500, 1500, 0)), Math.round(num(v[2], 0, 3, 0))];
+    }
+    if (Object.keys(sch).length) out.schema = sch;
+  }
   return out;
 }
 // "4k7" → 4700, "1,5k" → 1500, "100n" → 1e-7, "2M2" → 2.2e6

@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-24g';
+import * as K from './circuito.js?v=2026-11-24h';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -193,6 +193,7 @@ function modifica(fn) {
 }
 function cambiato(salva = true) {
   B.dirtyCirc = true;
+  window.dispatchEvent(new Event('bb-cambiato'));   // la vista schema (schema.js) si ridisegna
   disegnaComponenti();
   if (salva) { clearTimeout(B.salvaT); B.salvaT = setTimeout(salvaOra, 500); }
   aggiornaBottoni();
@@ -1465,7 +1466,7 @@ function monta() {
           <tr><td><kbd>Canc</kbd> o <kbd>⌫</kbd></td><td>elimina (durante un filo: toglie l'ultimo angolo)</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>annulla il comando in corso, poi toglie la selezione</td></tr>
           <tr><td><kbd>F</kbd></td><td>adatta tutto alla finestra</td></tr>
-          <tr><td><kbd>V</kbd></td><td>cambia la vista al centro: Breadboard ↔ Scheda e dispositivi (anche dai pulsanti in alto sul banco)</td></tr>
+          <tr><td><kbd>V</kbd></td><td>cambia la vista al centro: Breadboard → Schema → Scheda e dispositivi (anche dai pulsanti in alto sul banco)</td></tr>
           <tr><td><kbd>B</kbd> (tenuto)</td><td>preme B1 sulla scheda, come prima</td></tr>
           <tr><td><kbd>R</kbd> mentre posi o sposti</td><td>ruota il componente prima di lasciarlo</td></tr>
           <tr><td>rotella</td><td>zoom sul puntatore (sulla manopola di encoder e potenziometro: la gira)</td></tr>

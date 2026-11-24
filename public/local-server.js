@@ -3,18 +3,18 @@
 // ascoltano /api/events. Qui fetch ed EventSource vengono intercettati e la
 // stessa API è fatta con IndexedDB (progetti per nome utente), un worker che
 // compila (clang in WebAssembly) e un worker che esegue la scheda.
-import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-24g';
-import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-24g';
-import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-24g';
+import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-24h';
+import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-24h';
+import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-24h';
 import { unzipSync, zipSync } from '../vendor/fflate/esm/browser.js';
 
 const dec = new TextDecoder();
 
-import * as CFG from './config.js?v=2026-11-24g';
-import { supabaseRemote, fintoRemote } from './remote.js?v=2026-11-24g';
-import { sincronizza } from './sync.js?v=2026-11-24g';
-import { leggiLink, esercizioPulito } from './link.js?v=2026-11-24g';
-import { pulisciBreadboard } from './circuito.js?v=2026-11-24g';
+import * as CFG from './config.js?v=2026-11-24h';
+import { supabaseRemote, fintoRemote } from './remote.js?v=2026-11-24h';
+import { sincronizza } from './sync.js?v=2026-11-24h';
+import { leggiLink, esercizioPulito } from './link.js?v=2026-11-24h';
+import { pulisciBreadboard } from './circuito.js?v=2026-11-24h';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -248,7 +248,7 @@ function absorb(line) {
 
 // ------------------------------------------------------------------
 // Compilatore (worker che resta vivo: il clang da ~100 MB si carica una volta sola)
-const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-24g', import.meta.url), { type: 'module' });
+const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-24h', import.meta.url), { type: 'module' });
 let compSeq = 0;
 const compPending = new Map();
 let compReady = false;
@@ -300,7 +300,7 @@ function startSim(wasm) {
   state.startedAt = Date.now();
   state.paused = false;
   const sab = makeInput();
-  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-24g', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-24h', import.meta.url), { type: 'module' });
   const s = { worker, sab };
   sim = s;
   let buf = '', batch = [], flushT = null;
@@ -558,7 +558,7 @@ window.SV = {
   },
   // progetto nuovo dal modello Nucleo-F401RE (modello/nucleo-f401re.json)
   async newProject(nome) {
-    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-24g')).json();
+    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-24h')).json();
     nome = await freeName(nome);
     const enc = new TextEncoder(), files = {};
     for (const [k, v] of Object.entries(m.files)) {
@@ -686,7 +686,7 @@ if (ANTEPRIMA) await preparaAnteprima();
 else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
-  const { accedi } = await import('./auth.js?v=2026-11-24g');
+  const { accedi } = await import('./auth.js?v=2026-11-24h');
   account = await accedi(remote);
   if (account && account.ospite) {
     // localStorage dell'ospite: solo in memoria (temi, schede, guida… non restano nel browser)
@@ -713,15 +713,16 @@ else if (ACCOUNT) {
 }
 const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
 const portati = ACCOUNT ? await portaDaOspite() : [];
-for (const s of ['devices.js?v=2026-11-24g', 'app.js?v=2026-11-24g', 'analizzatore.js?v=2026-11-24g', 'web-ui.js?v=2026-11-24g']) await loadScript(s);
-await import('./editor.js?v=2026-11-24g');
-await import('./condividi.js?v=2026-11-24g');
-await import('./breadboard.js?v=2026-11-24g');
-await import('./segnala.js?v=2026-11-24g');
-await import('./layout.js?v=2026-11-24g');
+for (const s of ['devices.js?v=2026-11-24h', 'app.js?v=2026-11-24h', 'analizzatore.js?v=2026-11-24h', 'web-ui.js?v=2026-11-24h']) await loadScript(s);
+await import('./editor.js?v=2026-11-24h');
+await import('./condividi.js?v=2026-11-24h');
+await import('./breadboard.js?v=2026-11-24h');
+await import('./segnala.js?v=2026-11-24h');
+await import('./schema.js?v=2026-11-24h');
+await import('./layout.js?v=2026-11-24h');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (portati.length) { log('info', `Portati nel tuo account dalla sessione da ospite: ${portati.join(', ')}`); await loadProjects(); await selectProject(portati[0]); }
-if (OSPITE) await import('./ospite.js?v=2026-11-24g');
+if (OSPITE) await import('./ospite.js?v=2026-11-24h');
 if (ANTEPRIMA || salvato) {
   await loadProjects();
   await selectProject(ANTEPRIMA ? LINK.nome : salvato);

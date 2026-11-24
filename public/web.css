@@ -119,3 +119,6 @@ dialog.segn-admin:not([open]) { display: none; }
 .acc-ospite { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
 .ospite-striscia { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 12px; background: var(--warn-soft); color: var(--warn); border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-size: 13px; }
 .ospite-striscia span { color: var(--text); }
+
+/* nuova versione (aggiorna.js) */
+.nuova-versione { position: fixed; z-index: 3000; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--accent); box-shadow: var(--shadow); font-size: 13px; }

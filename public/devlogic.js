@@ -35,6 +35,17 @@ for (let i = 1; i <= 16; i++) ROLE_LABELS['l' + i] = ['L' + i, 'LED' + i, 'BAR' 
 for (let i = 1; i <= 4; i++) { ROLE_LABELS['r' + i] = ['R' + i, 'ROW' + i, 'RIGA' + i, 'ROW_' + i]; ROLE_LABELS['c' + i] = ['C' + i, 'COL' + i, 'COLONNA' + i, 'COL_' + i]; }
 const ENC_PAIRS = [['CLK', 'DT'], ['CA', 'CB'], ['ENC_A', 'ENC_B'], ['ENCA', 'ENCB'], ['A_ENC', 'B_ENC'], ['ROT_A', 'ROT_B'], ['S1', 'S2']];
 const ENC_SW = ['SW', 'ENC_SW', 'SW_ENC', 'ENC_BTN', 'KEY'];
+// timer in modalità encoder nel .ioc (TIMx.EncoderMode): CLK sul pin S_TIMx_CH1, DT su S_TIMx_CH2
+function encTimerPins(ioc) {
+  for (const k of Object.keys(ioc.tim || {})) {
+    const m = /^(TIM\d+)\.EncoderMode$/.exec(k);
+    if (!m) continue;
+    const sig = ch => Object.keys(ioc.pins || {}).find(p => (ioc.pins[p].Signal || '') === `S_${m[1]}_${ch}`);
+    const clk = sig('CH1'), dt = sig('CH2');
+    if (clk && dt) return { clk, dt };
+  }
+  return null;
+}
 
 function iocLabels(ioc) {
   const m = new Map();
@@ -60,7 +71,9 @@ function rolePins(type, n, labels, used, ioc) {
     if (k) { pins[r] = k; used.add(k); }
   }
   if (type === 'encoder') {
-    for (const [a, b] of ENC_PAIRS) if (labels.has(a) && labels.has(b) && !used.has(labels.get(a))) { pins.clk = labels.get(a); pins.dt = labels.get(b); break; }
+    const tp = encTimerPins(ioc);
+    if (tp && !used.has(tp.clk)) { pins.clk = tp.clk; pins.dt = tp.dt; used.add(tp.clk); used.add(tp.dt); }
+    else for (const [a, b] of ENC_PAIRS) if (labels.has(a) && labels.has(b) && !used.has(labels.get(a))) { pins.clk = labels.get(a); pins.dt = labels.get(b); break; }
     const sw = ENC_SW.map(x => labels.get(x)).find(k => k && !used.has(k));
     if (sw) pins.sw = sw;
   }
@@ -97,7 +110,7 @@ function autoDevices(ioc) {
     out.push(makeDevice(mux ? 'seg7mux' : 'seg7', ioc, out));
     out[out.length - 1].id = 'auto0';
   }
-  if (ENC_PAIRS.some(([a, b]) => labels.has(a) && labels.has(b))) { out.push(makeDevice('encoder', ioc, out)); out[out.length - 1].id = 'auto1'; }
+  if (encTimerPins(ioc) || ENC_PAIRS.some(([a, b]) => labels.has(a) && labels.has(b))) { out.push(makeDevice('encoder', ioc, out)); out[out.length - 1].id = 'auto1'; }
   return out;
 }
 const PIN_RE = /^P[A-EH]\d{1,2}$/;

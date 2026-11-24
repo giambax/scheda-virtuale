@@ -110,7 +110,7 @@ export function readIoc(txt) {
     pins[m[1]][m[2]] = m[3].replace(/\\:/g, ':');
   }
   const get = k => (txt.match(new RegExp('^' + k.replace(/\./g, '\\.') + '=(.*)$', 'm')) || [])[1];
-  return { pins, tim: Object.fromEntries(txt.split(/\r?\n/).filter(l => /^TIM\d+\.(Prescaler|Period|Pulse)/.test(l)).map(l => l.split('='))), sysclk: get('RCC.SYSCLKFreq_VALUE'), mcu: get('Mcu.UserName') || '', board: get('board') || '' };
+  return { pins, tim: Object.fromEntries(txt.split(/\r?\n/).filter(l => /^TIM\d+\.(Prescaler|Period|Pulse|EncoderMode)/.test(l)).map(l => l.split('='))), sysclk: get('RCC.SYSCLKFreq_VALUE'), mcu: get('Mcu.UserName') || '', board: get('board') || '' };
 }
 
 // GCC accetta funzioni scritte dentro un'altra funzione (estensione GNU, es. void Display(){…}

@@ -34,6 +34,7 @@
 #define HAL_TIM_ReadCapturedValue HAL_TIM_ReadCapturedValue__hdr
 #define HAL_TIM_Base_GetState HAL_TIM_Base_GetState__hdr
 #define HAL_TIM_PWM_GetState HAL_TIM_PWM_GetState__hdr
+#define HAL_TIM_Encoder_Init HAL_TIM_Encoder_Init__hdr
 #define HAL_UART_Transmit HAL_UART_Transmit__hdr
 #define HAL_UART_Transmit_IT HAL_UART_Transmit_IT__hdr
 #define HAL_UART_Transmit_DMA HAL_UART_Transmit_DMA__hdr
@@ -54,6 +55,7 @@
 #undef HAL_TIM_ReadCapturedValue
 #undef HAL_TIM_Base_GetState
 #undef HAL_TIM_PWM_GetState
+#undef HAL_TIM_Encoder_Init
 #undef HAL_UART_Transmit
 #undef HAL_UART_Transmit_IT
 #undef HAL_UART_Transmit_DMA
@@ -836,6 +838,7 @@ typedef struct {
   double acc;
   uint32_t sr_sh;
   uint8_t ocref[4];
+  uint8_t enc_ti[2], enc_ok;   /* modalità encoder: ultimo livello di TI1FP1 / TI2FP2, già letto */
 } simtim_t;
 static simtim_t tims[8];
 #define NTIM 8
@@ -905,6 +908,7 @@ static void tim_step(simtim_t *s)
 {
   TIM_TypeDef *t = s->t;
   tim_process_egr(s);
+  if (t->SMCR & TIM_SMCR_SMS) { unsigned sms = t->SMCR & TIM_SMCR_SMS; if (sms >= 1u && sms <= 3u) return; }   /* encoder: conta i fronti di TI1/TI2 (update_pins), non il clock */
   if (!(t->CR1 & TIM_CR1_CEN)) return;
   if (!tim_clock_on(s)) { WARN_ONCE(30 + (int)(s - tims), "%s avviato ma il suo clock non è abilitato (__HAL_RCC_%s_CLK_ENABLE): sulla scheda vera non conta.", s->name, s->name); return; }
   tim_sanitize(s);
@@ -1152,6 +1156,58 @@ HAL_StatusTypeDef HAL_TIMEx_PWMN_Start(TIM_HandleTypeDef *h, uint32_t c) { retur
 HAL_StatusTypeDef HAL_TIMEx_PWMN_Stop(TIM_HandleTypeDef *h, uint32_t c)  { return tim_ch_stop(h, c, 0, 1); }
 HAL_StatusTypeDef HAL_TIMEx_OCN_Start(TIM_HandleTypeDef *h, uint32_t c)  { return tim_ch_start(h, c, 0, 1); }
 HAL_StatusTypeDef HAL_TIMEx_OCN_Stop(TIM_HandleTypeDef *h, uint32_t c)   { return tim_ch_stop(h, c, 0, 1); }
+
+/* Modalità encoder (RM0368 §13.3.16): SMCR.SMS = 1 (TI1), 2 (TI2), 3 (TI12); CC1S = CC2S = 01,
+ * polarità con CC1P/CC2P, filtro IC1F/IC2F. Come nella HAL vera; i fronti li conta update_pins. */
+__weak void HAL_TIM_Encoder_MspInit(TIM_HandleTypeDef *htim) { (void)htim; }
+__weak void HAL_TIM_Encoder_MspDeInit(TIM_HandleTypeDef *htim) { (void)htim; }
+HAL_StatusTypeDef HAL_TIM_Encoder_Init(TIM_HandleTypeDef *h, const TIM_Encoder_InitTypeDef *c)
+{
+  if (!h || !c || !tim_of(h->Instance)) return HAL_ERROR;
+  if (h->State == HAL_TIM_STATE_RESET) { h->Lock = HAL_UNLOCKED; HAL_TIM_Encoder_MspInit(h); }
+  h->State = HAL_TIM_STATE_BUSY;
+  TIM_TypeDef *t = h->Instance;
+  t->SMCR &= ~TIM_SMCR_SMS;
+  tim_base_config(h);
+  t->SMCR = (t->SMCR & ~TIM_SMCR_SMS) | (c->EncoderMode & TIM_SMCR_SMS);
+  t->CCMR1 = (c->IC1Selection | (c->IC2Selection << 8)) | (c->IC1Prescaler | (c->IC2Prescaler << 8)) | ((c->IC1Filter << 4) | (c->IC2Filter << 12));
+  t->CCER = (t->CCER & ~(TIM_CCER_CC1P | TIM_CCER_CC2P | TIM_CCER_CC1NP | TIM_CCER_CC2NP)) | (c->IC1Polarity | (c->IC2Polarity << 4));
+  if ((c->IC1Polarity & TIM_CCER_CC1NP) || (c->IC2Polarity & TIM_CCER_CC1NP))
+    WARN_ONCE(41, "Encoder con polarità «entrambi i fronti» (BOTHEDGE): nel manuale non è ammessa in modalità encoder.");
+  tim_set_ready(h);
+  return HAL_OK;
+}
+HAL_StatusTypeDef HAL_TIM_Encoder_DeInit(TIM_HandleTypeDef *h)
+{
+  h->State = HAL_TIM_STATE_BUSY; tim_disable(h->Instance); HAL_TIM_Encoder_MspDeInit(h); h->State = HAL_TIM_STATE_RESET; return HAL_OK;
+}
+/* CCxE abilita solo la cattura in CCRx: il contatore dell'encoder conta lo stesso (anche con TIM_CHANNEL_1) */
+static uint32_t enc_cce(uint32_t Channel) { return Channel == TIM_CHANNEL_1 ? TIM_CCER_CC1E : Channel == TIM_CHANNEL_2 ? TIM_CCER_CC2E : (TIM_CCER_CC1E | TIM_CCER_CC2E); }
+static HAL_StatusTypeDef tim_enc_start(TIM_HandleTypeDef *h, uint32_t Channel, int it)
+{
+  simtim_t *s = tim_of(h->Instance);
+  if (!s) return HAL_ERROR;
+  TIM_TypeDef *t = h->Instance;
+  uint32_t e = enc_cce(Channel);
+  t->CCER |= e;
+  if (it) t->DIER |= ((e & TIM_CCER_CC1E) ? TIM_DIER_CC1IE : 0u) | ((e & TIM_CCER_CC2E) ? TIM_DIER_CC2IE : 0u);
+  s->enc_ok = 0;
+  t->CR1 |= TIM_CR1_CEN;
+  return HAL_OK;
+}
+static HAL_StatusTypeDef tim_enc_stop(TIM_HandleTypeDef *h, uint32_t Channel, int it)
+{
+  TIM_TypeDef *t = h->Instance;
+  uint32_t e = enc_cce(Channel);
+  t->CCER &= ~e;
+  if (it) t->DIER &= ~(((e & TIM_CCER_CC1E) ? TIM_DIER_CC1IE : 0u) | ((e & TIM_CCER_CC2E) ? TIM_DIER_CC2IE : 0u));
+  tim_disable(t);
+  return HAL_OK;
+}
+HAL_StatusTypeDef HAL_TIM_Encoder_Start(TIM_HandleTypeDef *h, uint32_t c)    { return tim_enc_start(h, c, 0); }
+HAL_StatusTypeDef HAL_TIM_Encoder_Stop(TIM_HandleTypeDef *h, uint32_t c)     { return tim_enc_stop(h, c, 0); }
+HAL_StatusTypeDef HAL_TIM_Encoder_Start_IT(TIM_HandleTypeDef *h, uint32_t c) { return tim_enc_start(h, c, 1); }
+HAL_StatusTypeDef HAL_TIM_Encoder_Stop_IT(TIM_HandleTypeDef *h, uint32_t c)  { return tim_enc_stop(h, c, 1); }
 
 HAL_StatusTypeDef HAL_TIM_ConfigClockSource(TIM_HandleTypeDef *h, const TIM_ClockConfigTypeDef *c)
 {
@@ -1821,6 +1877,82 @@ static void process_inputs(void)
 
 /* ------------------------------------------------------------------ */
 /* Livelli dei pin, EXTI, eventi verso il sito                          */
+/* Ingressi dei timer (canale in input capture o encoder, CCxS != 0): il pin in funzione
+ * alternativa vale quello che c'è fuori (o il pull-up/pull-down), come in modo ingresso. */
+static int tim_input_pin(int p, int pin, uint32_t af)
+{
+  for (size_t i = 0; i < sizeof tmap / sizeof tmap[0]; i++) {
+    if (tmap[i][3] != p || tmap[i][4] != pin || tmap[i][2]) continue;
+    simtim_t *s = &tims[tmap[i][0]];
+    if (!s->t || (uint32_t)s->af != af) continue;
+    int ch = tmap[i][1];
+    uint32_t ccmr = ch < 2 ? s->t->CCMR1 : s->t->CCMR2;
+    if ((ccmr >> ((ch & 1) * 8)) & 3u) return 1;
+  }
+  return 0;
+}
+/* livello del pin TIx del timer (canale ch = 0 → TI1, 1 → TI2), -1 se nessun pin è collegato */
+static int tim_ti_level(simtim_t *s, int ch, const uint16_t *nl)
+{
+  int ti = (int)(s - tims);
+  for (size_t i = 0; i < sizeof tmap / sizeof tmap[0]; i++) {
+    if (tmap[i][0] != ti || tmap[i][1] != ch || tmap[i][2]) continue;
+    int p = tmap[i][3], pin = tmap[i][4];
+    GPIO_TypeDef *g = gp[p];
+    if (!g || !port_clock_on(p) || ((g->MODER >> (2 * pin)) & 3u) != 2u) continue;
+    if (((g->AFR[pin >> 3] >> ((pin & 7) * 4)) & 0xFu) != (uint32_t)s->af) continue;
+    return (nl[p] >> pin) & 1;
+  }
+  return -1;
+}
+/* un passo dell'encoder: su o giù, con ritorno a capo su ARR e bit DIR in CR1 (RM0368 tab. 54) */
+static void enc_count(simtim_t *s, int up)
+{
+  TIM_TypeDef *t = s->t;
+  uint32_t arr = tim_arr(s), cnt = t->CNT, mask = s->bits32 ? 0xFFFFFFFFu : 0xFFFFu, upd = 0;
+  if (up) { if (cnt == arr) { cnt = 0; upd = 1; } else cnt = (cnt + 1u) & mask; t->CR1 &= ~TIM_CR1_DIR; }
+  else    { if (cnt == 0) { cnt = arr; upd = 1; } else cnt = (cnt - 1u) & mask; t->CR1 |= TIM_CR1_DIR; }
+  t->CNT = cnt;
+  if (upd && !(t->CR1 & TIM_CR1_UDIS)) { tim_setflag(s, TIM_SR_UIF); if (t->DIER & TIM_DIER_UIE) pend_irq(s->irq_up); }
+}
+static void enc_capture(simtim_t *s, int ch)
+{
+  TIM_TypeDef *t = s->t;
+  if (!(t->CCER & (TIM_CCER_CC1E << (4 * ch)))) return;
+  (&t->CCR1)[ch] = t->CNT;
+  tim_setflag(s, TIM_SR_CC1IF << ch);
+  if (t->DIER & (TIM_DIER_CC1IE << ch)) pend_irq(s->irq_cc);
+}
+/* Contatori in modalità encoder: fronti di TI1FP1 / TI2FP2 (dopo la polarità CCxP).
+ * TI1: conta sui fronti di TI1, su se TI1FP1 != TI2FP2 dopo il fronte; TI2: su se uguali; TI12: tutti e due.
+ * Il filtro IC (IC1F/IC2F, al massimo 8 campioni a fDTS/32 ≈ 3 µs a 84 MHz) qui non toglie niente:
+ * il tempo simulato dei pin va a passi di 1 ms, quindi ogni cambio dura più del filtro. */
+static void tim_encoder_edges(const uint16_t *nl)
+{
+  for (int i = 0; i < NTIM; i++) {
+    simtim_t *s = &tims[i];
+    TIM_TypeDef *t = s->t;
+    if (!t) continue;
+    unsigned sms = t->SMCR & TIM_SMCR_SMS;
+    if (sms < 1u || sms > 3u || !tim_clock_on(s)) { s->enc_ok = 0; continue; }
+    int r1 = tim_ti_level(s, 0, nl), r2 = tim_ti_level(s, 1, nl);
+    int a = r1 < 0 ? s->enc_ti[0] : r1 ^ (int)((t->CCER >> 1) & 1u);
+    int b = r2 < 0 ? s->enc_ti[1] : r2 ^ (int)((t->CCER >> 5) & 1u);
+    if (!s->enc_ok) { s->enc_ti[0] = (uint8_t)a; s->enc_ti[1] = (uint8_t)b; s->enc_ok = 1; continue; }
+    int on = (t->CR1 & TIM_CR1_CEN) != 0;
+    if (a != s->enc_ti[0]) {
+      s->enc_ti[0] = (uint8_t)a;
+      if (on && (sms & 1u)) enc_count(s, a != s->enc_ti[1]);
+      if (on && a) enc_capture(s, 0);
+    }
+    if (b != s->enc_ti[1]) {
+      s->enc_ti[1] = (uint8_t)b;
+      if (on && (sms & 2u)) enc_count(s, s->enc_ti[0] == b);
+      if (on && b) enc_capture(s, 1);
+    }
+  }
+}
+
 static void update_pins(int detect_edges)
 {
   uint16_t nl[8] = {0};
@@ -1843,7 +1975,8 @@ static void update_pins(int detect_edges)
         v = e >= 0 ? e : pu == 1 ? 1 : pu == 2 ? 0 : (board_pullup[p] >> pin) & 1;
       } else if (m == 2) {
         uint32_t af = (g->AFR[pin >> 3] >> ((pin & 7) * 4)) & 0xFu;
-        if (!pin_timer_output(p, pin, af, &v, &duty, &freq)) v = (af == 7 || af == 8) ? 1 : 0;
+        if (tim_input_pin(p, pin, af)) v = e >= 0 ? e : pu == 1 ? 1 : pu == 2 ? 0 : (board_pullup[p] >> pin) & 1;
+        else if (!pin_timer_output(p, pin, af, &v, &duty, &freq)) v = (af == 7 || af == 8) ? 1 : 0;
       } else analog |= (uint16_t)(1u << pin);
       if (v) L |= (uint16_t)(1u << pin);
       int f = (int)lround(freq);
@@ -1875,6 +2008,7 @@ static void update_pins(int detect_edges)
       EXTI->SWIER = 0;
     }
   }
+  tim_encoder_edges(nl);
   memcpy(lvl, nl, sizeof lvl);
 }
 

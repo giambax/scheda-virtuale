@@ -193,7 +193,10 @@ select:focus, input:focus { border-color: var(--accent); }
 
 /* seriale */
 .serial-head, .scope-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.serial-head button:last-child { margin-left: auto; }
+.serial-head #serial-save { margin-left: auto; }
+.serial-warn { padding: 6px 12px; background: #fff4d6; color: #7a5200; border-bottom: 1px solid var(--border); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .serial-warn { background: #3a2e10; color: #f5c26b; } }
+:root[data-theme="dark"] .serial-warn { background: #3a2e10; color: #f5c26b; }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg button { border: none; border-radius: 0; padding: 4px 10px; font-size: 12px; background: transparent; }
 .seg button + button { border-left: 1px solid var(--border); }

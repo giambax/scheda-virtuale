@@ -24,7 +24,7 @@ const S = {
   server: {}, ports: {}, pwm: {}, adc: {}, adcVal: {},
   ms: 0, tick: 0, primask: 0, clocks: null,
   irq: {}, irqRate: {}, irqLast: null,
-  uart: {}, uartSel: '2', serialChunks: [],
+  uart: {}, uartSel: '2', serialChunks: [], baud: {},
   inputs: {}, warnCount: 0,
   pinsKey: '', dirty: true,
 };
@@ -336,6 +336,7 @@ function onSimLine(line) {
     case 'W': {
       const k = keyOf(+a[1], +a[2]);
       S.pwm[k] = { duty: +a[3], freq: +a[4] };
+      if (window.laOnW) laOnW(k, +a[3], +(a[5] ?? a[4]));
       S.dirty = true;
       break;
     }
@@ -350,8 +351,9 @@ function onSimLine(line) {
     }
     case 'Q': onIrq(a.slice(1)); break;
     case 'T': S.ms = Math.max(S.ms, +a[1]); S.tick = +a[2]; S.primask = +a[3]; renderTime(); break;
-    case 'U': appendSerial(a[1], hexToStr(a[2]), ''); break;
-    case 'P': appendSerial('2', hexToStr(a[1]), 'pf'); break;
+    case 'U': appendSerial(a[1], hexToStr(a[2]), '', a[2]); break;
+    case 'P': appendSerial('2', hexToStr(a[1]), 'pf', a[1]); break;
+    case 'N': S.baud[a[1]] = +a[2]; serialBaudCheck(); break;
     case 'Y': if (window.dbgOnY) dbgOnY(a[1], a[2] || ''); break;
     case 'B': devOnB(a); break;
     case 'J': devOnJ(a); break;
@@ -398,17 +400,44 @@ function renderTime() {
 
 // ------------------------------------------------------------------
 // Seriale
-function appendSerial(n, text, cls) {
+// ogni pezzo ricevuto: { n USART, text, hex, cls, ms tempo simulato }. La vista (testo/HEX, ora) si
+// applica al momento del disegno, così cambiarla ridisegna tutto lo storico.
+const SER = { hex: false, ts: false, bol: true };
+function serialFmt(c) {
+  const stamp = () => SER.ts ? `[${(c.ms / 1000).toFixed(3).replace('.', ',')} s] ` : '';
+  let out = '';
+  if (SER.hex && c.hex) {
+    for (let i = 0; i < c.hex.length; i += 2) {
+      if (SER.bol) { out += stamp(); SER.bol = false; }
+      const b = c.hex.substr(i, 2).toUpperCase();
+      out += b + ' ';
+      if (b === '0A') { out += '\n'; SER.bol = true; }
+    }
+    return out;
+  }
+  for (const ch of c.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')) {
+    if (SER.bol && ch !== '\n') { out += stamp(); SER.bol = false; }
+    out += ch;
+    if (ch === '\n') SER.bol = true;
+  }
+  return out;
+}
+function serialSpan(c) {
+  const span = document.createElement('span');
+  if (c.cls) span.className = c.cls;
+  span.textContent = serialFmt(c);
+  return span;
+}
+function appendSerial(n, text, cls, hex) {
   S.uart[n] = true;
-  if (!S.serialChunks.length) $('#serial').innerHTML = '';
-  S.serialChunks.push({ n, text, cls });
+  if (!S.serialChunks.length) { $('#serial').innerHTML = ''; SER.bol = true; }
+  const c = { n, text, cls, hex, ms: S.ms };
+  S.serialChunks.push(c);
+  if (S.serialChunks.length > 20000) S.serialChunks.splice(0, 5000);
   if (n === S.uartSel || cls) {
     const term = $('#serial');
-    const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
-    const span = document.createElement('span');
-    if (cls) span.className = cls;
-    span.textContent = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    term.appendChild(span);
+    const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 40;   // se l'utente è salito, non lo riporto giù
+    term.appendChild(serialSpan(c));
     while (term.childNodes.length > 4000) term.removeChild(term.firstChild);
     if (atBottom) term.scrollTop = term.scrollHeight;
     if (cls === 'pf' && !S.pfNoted) {
@@ -417,6 +446,7 @@ function appendSerial(n, text, cls) {
       note.className = 'note';
       note.textContent = '\n[printf non collegato alla UART: sulla scheda vera questo testo non uscirebbe. Definisci __io_putchar() che chiama HAL_UART_Transmit()]\n';
       term.appendChild(note);
+      SER.bol = true;
     }
   }
   if (!$('#pane-serial').classList.contains('active')) $('#serial-dot').hidden = false;
@@ -429,20 +459,32 @@ function renderUartTabs() {
   const html = names.sort().map(n => `<button data-u="${n}" class="${n === S.uartSel ? 'on' : ''}">USART${n}</button>`).join('');
   if (el.innerHTML !== html) {
     el.innerHTML = html;
-    el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { S.uartSel = b.dataset.u; redrawSerial(); renderUartTabs(); }));
+    el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { S.uartSel = b.dataset.u; redrawSerial(); renderUartTabs(); serialBaudCheck(); }));
   }
 }
 function redrawSerial() {
   const term = $('#serial');
   term.innerHTML = '';
-  for (const c of S.serialChunks) {
-    if (c.n !== S.uartSel && !c.cls) continue;
-    const s = document.createElement('span');
-    if (c.cls) s.className = c.cls;
-    s.textContent = c.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    term.appendChild(s);
-  }
+  SER.bol = true;
+  for (const c of S.serialChunks) if (c.n === S.uartSel || c.cls) term.appendChild(serialSpan(c));
   term.scrollTop = term.scrollHeight;
+}
+// baud della USART scelta (da HAL_UART_Init del programma) contro quello del monitor
+function serialBaudCheck() {
+  const b = S.baud[S.uartSel], mon = +$('#serial-baud').value, w = $('#serial-baud-warn');
+  w.hidden = !b || b === mon;
+  if (b && b !== mon) w.textContent = `⚠ USART${S.uartSel} è configurata a ${b.toLocaleString('it-IT')} baud, il monitor a ${mon.toLocaleString('it-IT')}: sulla scheda vera leggeresti caratteri sbagliati.`;
+  $('#serial-baud').title = b ? `Il programma usa USART${S.uartSel} a ${b} baud` : 'Baud del monitor (il programma non ha ancora inizializzato la UART)';
+}
+function serialDownload() {
+  SER.bol = true;
+  const txt = S.serialChunks.filter(c => c.n === S.uartSel || c.cls).map(serialFmt).join('');
+  redrawSerial();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([txt], { type: 'text/plain;charset=utf-8' }));
+  a.download = `seriale-USART${S.uartSel}-${(S.proj && S.proj.name) || 'progetto'}${SER.hex ? '-hex' : ''}.txt`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 // Analizzatore logico (scheda "Segnali"): analizzatore.js
@@ -676,11 +718,12 @@ function showTab(name) {
   try { localStorage.setItem('sv-tab', name); } catch {}
 }
 function resetSimState() {
-  Object.assign(S, { ports: {}, pwm: {}, adc: {}, ms: 0, tick: 0, primask: 0, irq: {}, irqRate: {}, irqLast: null, uart: {}, serialChunks: [], pinsKey: '', pfNoted: false });
+  Object.assign(S, { ports: {}, pwm: {}, adc: {}, ms: 0, tick: 0, primask: 0, irq: {}, irqRate: {}, irqLast: null, uart: {}, serialChunks: [], baud: {}, pinsKey: '', pfNoted: false });
   for (const k of Object.keys(S.inputs)) { if (!S.inputs[k].latched) delete S.inputs[k]; }
   $('#serial').innerHTML = '';
   $('#irqs').innerHTML = '<span class="muted small">Nessun interrupt finora.</span>';
   if (window.laReset) laReset();
+  serialBaudCheck();
   if (window.dbgOnReset) dbgOnReset();
   devOnReset();
   S.dirty = true;
@@ -707,7 +750,11 @@ function wire() {
   $('#btn-help').addEventListener('click', () => $('#help').showModal());
   $('#btn-refresh').addEventListener('click', loadProjects);
   $('#filter').addEventListener('input', renderProjects);
-  $('#serial-clear').addEventListener('click', () => { S.serialChunks = []; $('#serial').innerHTML = ''; });
+  $('#serial-clear').addEventListener('click', () => { S.serialChunks = []; $('#serial').innerHTML = ''; SER.bol = true; });
+  $('#serial-view').addEventListener('change', e => { SER.hex = e.target.value === 'hex'; redrawSerial(); });
+  $('#serial-ts').addEventListener('change', e => { SER.ts = e.target.checked; redrawSerial(); });
+  $('#serial-save').addEventListener('click', serialDownload);
+  $('#serial-baud').addEventListener('change', serialBaudCheck);
   $('#serial-form').addEventListener('submit', e => {
     e.preventDefault();
     const inp = $('#serial-input');
@@ -735,7 +782,7 @@ function connect() {
         S.warnCount = 0; $('#log-count').hidden = true;
         const sn = m.snap;
         [...Object.values(sn.M), ...Object.values(sn.C), ...Object.values(sn.W), ...Object.values(sn.A), ...Object.values(sn.B || {}), ...Object.values(sn.J || {}), sn.K, sn.Q, sn.T].filter(Boolean).forEach(onSimLine);
-        for (const [n, hex] of Object.entries(sn.uart || {})) appendSerial(n === 'P' ? '2' : n, hexToStr(hex), n === 'P' ? 'pf' : '');
+        for (const [n, hex] of Object.entries(sn.uart || {})) appendSerial(n === 'P' ? '2' : n, hexToStr(hex), n === 'P' ? 'pf' : '', hex);
         onState(m.state);
         if (window.dbgOnHello) dbgOnHello(m);
         break;

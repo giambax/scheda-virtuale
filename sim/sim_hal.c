@@ -1306,6 +1306,7 @@ HAL_StatusTypeDef HAL_UART_Init(UART_HandleTypeDef *h)
   h->gState = HAL_UART_STATE_BUSY;
   uint32_t pclk = s->apb2 ? clk_pclk2() : clk_pclk1();
   if (h->Init.BaudRate) h->Instance->BRR = pclk / h->Init.BaudRate;
+  emit("N %d %lu", s->num, (unsigned long)h->Init.BaudRate);   /* baud per il monitor seriale */
   h->Instance->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
   h->ErrorCode = HAL_UART_ERROR_NONE;
   h->gState = HAL_UART_STATE_READY;
@@ -1850,7 +1851,7 @@ static void update_pins(int detect_edges)
         if (abs(duty - pwm_emit_duty[p][pin]) >= 3 || duty < 0 || pwm_emit_duty[p][pin] < 0 || f != pwm_emit_freq[p][pin]) {
           pwm_emit_duty[p][pin] = (int16_t)duty;
           pwm_emit_freq[p][pin] = f;
-          emit("W %d %d %d %d", p, pin, duty, f);
+          emit("W %d %d %d %d %.4f", p, pin, duty, f, freq);   /* freq esatta: onda PWM nell'analizzatore */
         }
       }
     }

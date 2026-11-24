@@ -124,13 +124,18 @@ if ('serviceWorker' in navigator) {
     <div class="pane" id="pane-serial">
       <div class="serial-head">
         <div id="uart-tabs" class="seg"></div>
-        <span class="muted small">USART2 = porta seriale USB del ST-LINK (115200 baud)</span>
+        <span class="muted small">USART2 = porta seriale USB del ST-LINK</span>
+        <select id="serial-baud" class="small"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option><option>230400</option><option>460800</option><option>921600</option></select>
+        <select id="serial-view" class="small" title="Come mostrare i byte ricevuti"><option value="txt">Testo</option><option value="hex">HEX</option></select>
+        <label class="small"><input id="serial-ts" type="checkbox"> Ora</label>
+        <button id="serial-save" class="ghost small" title="Scarica quello che è arrivato in un file .txt (nella vista scelta)">Scarica .txt</button>
         <button id="serial-clear" class="ghost small">Pulisci</button>
       </div>
+      <div id="serial-baud-warn" class="serial-warn small" hidden></div>
       <pre id="serial" class="terminal"></pre>
       <form id="serial-form" class="serial-send">
         <input id="serial-input" type="text" placeholder="Scrivi e premi Invio per mandarlo alla scheda…" autocomplete="off">
-        <select id="serial-eol" title="Fine riga"><option value="">nessuna</option><option value="\n" selected>\n</option><option value="\r\n">\r\n</option><option value="\r">\r</option></select>
+        <select id="serial-eol" title="Terminatore aggiunto in fondo a quello che mandi"><option value="">nessuno</option><option value="\r">CR</option><option value="\n" selected>LF</option><option value="\r\n">CR+LF</option></select>
         <button type="submit">Invia</button>
       </form>
     </div>
@@ -142,6 +147,7 @@ if ('serviceWorker' in navigator) {
         <label class="small la-trig">Trigger <select id="la-trig-ch" title="Si ferma da solo al primo fronte di questo canale"></select>
           <select id="la-trig-fr"><option value="1">↑ salita</option><option value="0">↓ discesa</option></select></label>
         <button id="la-togli" class="ghost small" title="Togli i cursori (anche doppio clic)">Togli cursori</button>
+        <div class="seg"><button id="la-auto" title="Canali scelti in automatico: prima i pin che commutano, poi le uscite con etichetta, poi gli ingressi con interrupt. Scegliendo a mano la scelta resta salvata per questo progetto.">Auto</button><button id="la-esporta" title="Salva i fronti della finestra visibile in un file CSV (tempo in µs; separatore ;)">Esporta CSV</button></div>
       </div>
       <div id="la-canali" class="la-canali"></div>
       <canvas id="scope"></canvas>

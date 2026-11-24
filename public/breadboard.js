@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js';
+import * as K from './circuito.js?v=2026-11-24e';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -125,6 +125,9 @@ function disegnaComponenti() {
   const g = $('#bb-comps');
   g.innerHTML = B.bb.comps.map(c => `<g class="bbc" data-comp="${c.id}" transform="translate(${c.x * P} ${c.y * P}) rotate(${(c.rot || 0) * 90})">${compSVG(c)}</g>`).join('') +
     B.bb.comps.map(etichetta).join('');
+  // area di presa: tutto il riquadro del componente (il ponticello, disegnato solo con il tratto, prima si
+  // prendeva solo cliccando esattamente sulla linea: il clic finiva sul foro sotto e partiva un filo)
+  g.querySelectorAll('[data-comp]').forEach(el => { try { const b = el.getBBox(), m = 2.5; el.insertAdjacentHTML('afterbegin', `<rect class="presa" x="${b.x - m}" y="${b.y - m}" width="${b.width + 2 * m}" height="${b.height + 2 * m}" fill="transparent"/>`); } catch {} });
   $('#bb-wires').innerHTML = B.bb.wires.map(w => {
     const pts = w.p.map(q => q.map(v => v * P).join(',')).join(' ');
     const end = (q) => `<circle cx="${q[0] * P}" cy="${q[1] * P}" r="2.6" fill="${w.col}" stroke="#0006" stroke-width=".6"/>`;
@@ -193,23 +196,19 @@ function elimina() {
   modifica(bb => { bb.comps = bb.comps.filter(c => !s.has(c.id)); bb.wires = bb.wires.filter(w => !s.has(w.id)); });
   B.sel.clear(); disegnaSelezione();
 }
-function ruotaSel() {
-  if (![...B.sel].some(id => B.bb.comps.some(c => c.id === id))) return;
-  modifica(bb => { for (const c of bb.comps) if (B.sel.has(c.id)) c.rot = ((c.rot || 0) + 1) % 4; });
-}
 function copia() {
   const comps = B.bb.comps.filter(c => B.sel.has(c.id)), wires = B.bb.wires.filter(w => B.sel.has(w.id));
   if (comps.length || wires.length) B.clip = JSON.parse(JSON.stringify({ comps, wires }));
   aggiornaBottoni();
 }
-function incolla() {
+function incolla(off = 2) {
   if (!B.clip) return;
   const nuovi = new Set();
   modifica(bb => {
-    for (const c of B.clip.comps) { const n = { ...JSON.parse(JSON.stringify(c)), id: nuovoId('c'), x: c.x + 2, y: c.y + 2 }; n.label = nuovaEtichetta(c.type, bb); bb.comps.push(n); nuovi.add(n.id); }
-    for (const w of B.clip.wires) { const n = { ...JSON.parse(JSON.stringify(w)), id: nuovoId('w') }; n.p = n.p.map(([x, y]) => [x + 2, y + 2]); bb.wires.push(n); nuovi.add(n.id); }
+    for (const c of B.clip.comps) { const n = { ...JSON.parse(JSON.stringify(c)), id: nuovoId('c'), x: c.x + off, y: c.y + off }; n.label = nuovaEtichetta(c.type, bb); bb.comps.push(n); nuovi.add(n.id); }
+    for (const w of B.clip.wires) { const n = { ...JSON.parse(JSON.stringify(w)), id: nuovoId('w') }; n.p = n.p.map(([x, y]) => [x + off, y + off]); bb.wires.push(n); nuovi.add(n.id); }
   });
-  B.clip = { comps: B.clip.comps.map(c => ({ ...c, x: c.x + 2, y: c.y + 2 })), wires: B.clip.wires.map(w => ({ ...w, p: w.p.map(([x, y]) => [x + 2, y + 2]) })) };
+  B.clip = { comps: B.clip.comps.map(c => ({ ...c, x: c.x + off, y: c.y + off })), wires: B.clip.wires.map(w => ({ ...w, p: w.p.map(([x, y]) => [x + off, y + off]) })) };
   B.sel = nuovi; disegnaSelezione();
 }
 
@@ -532,6 +531,7 @@ function aggiornaStato() {
   }
   const disp = B.bb.comps.filter(c => c.type === 'seg7' || c.type === 'seg7x3');
   if (!t && disp.length && B.pub) t = disp.map(c => `${c.label}: si legge «${letturaDisplay(c)}»`).join(' · ');
+  if (msgFisso) t = msgFisso + (t ? '  ·  ' + t : '');
   if (B.rallentato) { t += (t ? ' · ' : '') + 'circuito lento: alcune soluzioni rimandate'; B.rallentato = false; }
   if (el.textContent !== t) el.textContent = t;
   // evidenzia il nodo
@@ -622,63 +622,214 @@ function scatto(id, dir) {
   if (r) r.setAttribute('transform', `rotate(${B.encPos[id] * 18} 20 -30)`);
 }
 
+// Interazione (tappa A, come Multisim/Tinkercad):
+//   fili clic-clic: clic su un foro o un pin, clic sull'arrivo → filo a 90° con colore automatico;
+//     clic fuori dai fori (o Alt+clic su un foro) = angolo; Esc annulla; Backspace toglie l'ultimo angolo.
+//     Si può anche tirare: premi su un foro, trascina, lascia sull'arrivo.
+//   trascina sul vuoto = rettangolo di selezione; Maiusc+trascina o rotella premuta = sposta la vista;
+//   rotella = zoom sul puntatore; tasti R M C W F Canc Esc, ⌘/Ctrl+Z/Y/C/V/D/A (elenco con "?").
+// Le scorciatoie valgono in tutta la pagina, tranne quando si scrive (campi, editor del codice) o con
+// una finestra aperta: prima andavano solo con il fuoco sul disegno (vedi resoconto: difetto di R).
+const SEGNALI = [K.COLORI_FILO[2], K.COLORI_FILO[3], K.COLORI_FILO[4], K.COLORI_FILO[5], K.COLORI_FILO[6], K.COLORI_FILO[7], K.COLORI_FILO[8], K.COLORI_FILO[9]];
+const suFori = g => K.FORI.has(K.chiave(g[0], g[1]));
+const suPiedino = (g, escludi) => B.bb.comps.some(c => !(escludi && escludi.has(c.id)) && K.piediniXY(c).some(p => p.x === g[0] && p.y === g[1]));
+const terminale = g => suFori(g) || suPiedino(g);
+// percorso a 90° tra due punti: dai pin della Nucleo si esce in orizzontale, dalla breadboard in verticale
+function angolo(a, b) {
+  if (a[0] === b[0] || a[1] === b[1]) return [];
+  const daNucleo = a[0] <= K.NUCLEO.x + K.NUCLEO.w, versoNucleo = b[0] <= K.NUCLEO.x + K.NUCLEO.w;
+  return [daNucleo && !versoNucleo ? [b[0], a[1]] : versoNucleo ? [a[0], b[1]] : [a[0], b[1]]];
+}
+function percorso(pts) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) out.push(...angolo(out[out.length - 1], pts[i]), pts[i]);
+  // via i punti doppi e quelli in mezzo a un tratto dritto
+  const s = out.filter((p, i) => i === 0 || p[0] !== out[i - 1][0] || p[1] !== out[i - 1][1]);
+  return s.filter((p, i) => i === 0 || i === s.length - 1 || !((s[i - 1][0] === p[0] && p[0] === s[i + 1][0]) || (s[i - 1][1] === p[1] && p[1] === s[i + 1][1])));
+}
+// colore automatico: rosso per 5V/3V3, nero per GND, per i segnali un colore per nodo (lo stesso nodo, lo stesso colore)
+function coloreAuto(a, b) {
+  const net = K.netlist(B.bb);
+  const nodi = [a, b].map(g => net.nodoDi(g[0], g[1])).filter(n => n >= 0).map(n => net.nodi[n]);
+  const chiavi = nodi.flatMap(n => n.chiavi);
+  if (nodi.some(n => n.alim.includes('GND')) || chiavi.some(k => k === 'bb:T-' || k === 'bb:B-')) return K.COLORI_FILO[1];
+  if (nodi.some(n => n.alim.includes('5V') || n.alim.includes('3V3')) || chiavi.some(k => k === 'bb:T+' || k === 'bb:B+')) return K.COLORI_FILO[0];
+  // un filo già presente sullo stesso nodo dà il colore
+  for (const w of B.bb.wires) for (const q of [w.p[0], w.p[w.p.length - 1]]) { const n = net.nodoDi(q[0], q[1]); if (n >= 0 && nodi.some(x => x.i === n) && SEGNALI.includes(w.col)) return w.col; }
+  const pin = nodi.flatMap(n => n.pins)[0];
+  if (pin) { let h = 0; for (const ch of pin) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return SEGNALI[h % SEGNALI.length]; }
+  const usati = B.bb.wires.map(w => w.col);
+  return SEGNALI.find(c => !usati.includes(c)) || SEGNALI[B.bb.wires.length % SEGNALI.length];
+}
+function disegnaFiloInCorso() {
+  const g = $('#bb-ghost');
+  if (!B.filo) { g.innerHTML = ''; return; }
+  const pts = percorso([...B.filo.pts, B.filo.cur]);
+  const col = B.filo.col || (B.filo.col = coloreAuto(B.filo.pts[0], B.filo.pts[0]));
+  const fine = terminale(B.filo.cur) && (B.filo.cur[0] !== B.filo.pts[0][0] || B.filo.cur[1] !== B.filo.pts[0][1]);
+  g.innerHTML = `<polyline points="${pts.map(q => q.map(v => v * P).join(',')).join(' ')}" fill="none" stroke="${col}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity=".85" stroke-dasharray="${fine ? '' : '5 3'}"/>` +
+    `<circle cx="${B.filo.pts[0][0] * P}" cy="${B.filo.pts[0][1] * P}" r="4" fill="${col}"/>` +
+    `<circle cx="${B.filo.cur[0] * P}" cy="${B.filo.cur[1] * P}" r="5" fill="none" stroke="${fine ? '#2fd470' : '#9aa0a6'}" stroke-width="1.6"/>`;
+}
+function iniziaFilo(g) { B.filo = { pts: [g], cur: g, col: null }; $('#bb-svg').classList.add('filo'); disegnaFiloInCorso(); messaggioStato('Filo: clicca l\'arrivo (un foro o un pin). Clic fuori dai fori o Alt+clic = angolo · Esc annulla'); }
+function finisciFilo(g) {
+  const pts = percorso([...B.filo.pts, g]);
+  const w = { id: nuovoId('w'), p: pts, col: coloreAuto(B.filo.pts[0], g) };
+  B.filo = null; disegnaFiloInCorso(); messaggioStato('');
+  if (B.modo !== 'filo') $('#bb-svg').classList.remove('filo');
+  modifica(bb => bb.wires.push(w));
+  B.sel = new Set([w.id]); disegnaSelezione();
+}
+function annullaComando() {
+  if (B.filo) { B.filo = null; disegnaFiloInCorso(); messaggioStato(''); if (B.modo !== 'filo') $('#bb-svg').classList.remove('filo'); return true; }
+  if (B.posa) { B.posa = null; $('#bb-svg').classList.remove('posa'); $('#bb-ghost').innerHTML = ''; $('#bb-sel-aggancio').innerHTML = ''; document.querySelectorAll('.pal-voce.on').forEach(x => x.classList.remove('on')); messaggioStato(''); return true; }
+  if (B.drag && B.drag.kind === 'muovi') {
+    const d = B.drag; B.drag = null;
+    B.bb = K.pulisciBreadboard(JSON.parse(d.prima)); $('#bb-svg').classList.remove('sposta'); $('#bb-sel-aggancio').innerHTML = ''; messaggioStato('');
+    if (d.copia) { annulla(); B.redo.pop(); aggiornaBottoni(); } else cambiato(false);   // la copia annullata sparisce (e non resta da rifare)
+    return true;
+  }
+  if (B.modo === 'filo') { impostaModo('sel'); return true; }
+  if (B.sel.size) { B.sel.clear(); disegnaSelezione(); return true; }
+  return false;
+}
+function impostaModo(m) {
+  B.modo = m;
+  $('#bb-svg').classList.toggle('filo', m === 'filo');
+  $('#bb-t-sel').classList.toggle('on', m === 'sel'); $('#bb-t-filo').classList.toggle('on', m === 'filo');
+  messaggioStato(m === 'filo' ? 'Modalità filo (W): clicca un foro o un pin per partire · Esc per tornare a selezionare' : '');
+}
+let msgFisso = '';
+function messaggioStato(t) { msgFisso = t; aggiornaStato(); }
+
+// ruota tutto quello che è selezionato (componenti attorno al loro centro, fili attorno al centro del filo)
+function ruotaSel() {
+  const ids = new Set(B.sel);
+  if (!ids.size) return;
+  modifica(bb => {
+    for (const c of bb.comps) if (ids.has(c.id)) {
+      const centro = cc => { const pp = K.piediniXY(cc), xs = pp.map(p => p.x), ys = pp.map(p => p.y); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+      const c0 = centro(c);
+      c.rot = ((c.rot || 0) + 1) % 4;
+      const c1 = centro(c);
+      c.x += Math.round(c0[0] - c1[0]); c.y += Math.round(c0[1] - c1[1]);
+    }
+    for (const w of bb.wires) if (ids.has(w.id)) {
+      const xs = w.p.map(q => q[0]), ys = w.p.map(q => q[1]);
+      const cx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2), cy = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
+      w.p = w.p.map(([x, y]) => [cx - (y - cy), cy + (x - cx)]);
+    }
+  });
+}
+// sposta (M) / copia (C): la selezione segue il mouse fino al clic
+function iniziaMuovi(copiaPrima) {
+  if (!B.sel.size) { messaggioStato('Seleziona prima qualcosa (clic, o trascina un rettangolo)'); return; }
+  if (copiaPrima) { copia(); incolla(0); }
+  const g = B.hover || [0, 0], ora = JSON.stringify(B.bb);
+  B.drag = { kind: 'muovi', start: g, prima: ora, mosso: false, copia: !!copiaPrima };
+  $('#bb-svg').classList.add('sposta');
+  messaggioStato((copiaPrima ? 'Copia' : 'Sposta') + ': muovi il mouse e clicca dove lasciarla · Esc annulla');
+}
+function spostaSelezione(dx, dy) {
+  for (const c of B.bb.comps) if (B.sel.has(c.id)) { c.x += dx; c.y += dy; }
+  for (const w of B.bb.wires) if (B.sel.has(w.id)) w.p = w.p.map(([x, y]) => [x + dx, y + dy]);
+}
+
+// aggancio: dove finirebbero i piedini dei componenti (verde = foro libero, rosso = fuori dai fori o
+// occupato, arancione = due piedini diversi dello stesso componente sulla stessa fila)
+function controllaAggancio(comps) {
+  const ids = new Set(comps.map(c => c.id));
+  const altri = { v: 1, comps: B.bb.comps.filter(c => !ids.has(c.id)), wires: B.bb.wires };
+  const net = K.netlist(altri);
+  const occupati = new Set(altri.comps.flatMap(c => K.piediniXY(c).map(p => K.chiave(p.x, p.y))));
+  const out = [], avvisi = [];
+  for (const c of comps) {
+    const pp = K.piediniXY(c).map(p => ({ ...p, f: K.funzionePiedino(c, p.n), nodo: net.nodoDi(p.x, p.y) }));
+    for (const p of pp) {
+      let st = !suFori([p.x, p.y]) ? 'no' : occupati.has(K.chiave(p.x, p.y)) ? 'no' : 'ok';
+      if (st === 'ok' && c.type !== 'jumper' && p.nodo >= 0 && pp.some(q => q !== p && q.nodo === p.nodo && q.f !== p.f)) st = 'fila';
+      out.push({ ...p, st });
+    }
+    if (pp.some(p => out.find(o => o.x === p.x && o.y === p.y && o.st === 'fila'))) avvisi.push(`${c.label || K.TIPI[c.type].nome}: due piedini sulla stessa fila (sono collegati tra loro)`);
+    else if (pp.some(p => !suFori([p.x, p.y]))) avvisi.push(`${c.label || K.TIPI[c.type].nome}: qualche piedino è fuori dai fori`);
+  }
+  const col = { ok: '#2fd470', no: '#ff4d4f', fila: '#ffa940' };
+  $('#bb-sel-aggancio').innerHTML = out.map(p => `<circle cx="${p.x * P}" cy="${p.y * P}" r="4.6" fill="${col[p.st]}" fill-opacity=".28" stroke="${col[p.st]}" stroke-width="1.6"/>`).join('');
+  return avvisi;
+}
+
 function wire() {
   const svg = $('#bb-svg');
+  B.modo = 'sel';
+  svg.addEventListener('contextmenu', e => { if (B.filo || B.posa) { e.preventDefault(); annullaComando(); } });
   svg.addEventListener('pointerdown', ev => {
-    if (ev.button === 1 || ev.button === 2) return;
-    svg.focus();
+    if (ev.button === 2) return;
     const m = mondo(ev), g = griglia(m), hit = colpito(ev);
-    svg.setPointerCapture(ev.pointerId);
-    if (B.posa) {   // componente nuovo dalla tavolozza: si posa qui
-      const tipo = B.posa; B.posa = null; $('#bb-svg').classList.remove('posa');
-      aggiungi(tipo, g[0], g[1]);
+    try { svg.setPointerCapture(ev.pointerId); } catch {}
+    // sposta la vista: rotella premuta o Maiuscolo+trascina
+    if (ev.button === 1 || (ev.shiftKey && !B.filo)) { ev.preventDefault(); svg.classList.add('pan'); B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } }; return; }
+    if (B.posa) { const tipo = B.posa; annullaComando(); aggiungi(tipo, g[0], g[1]); return; }
+    if (B.drag && B.drag.kind === 'muovi') { finisciMuovi(); return; }
+    if (B.filo) {
+      const inizio = B.filo.pts[0];
+      if (terminale(g) && !ev.altKey && (g[0] !== inizio[0] || g[1] !== inizio[1])) finisciFilo(g);
+      else if (g[0] !== B.filo.pts[B.filo.pts.length - 1][0] || g[1] !== B.filo.pts[B.filo.pts.length - 1][1]) { B.filo.pts = percorso([...B.filo.pts, g]); disegnaFiloInCorso(); }
       return;
     }
     if (hit.act === 'press') { premi(hit.id, true); B.drag = { kind: 'press', id: hit.id }; return; }
     if (hit.act === 'enc') { const e = B.enc[hit.id] || [0, 0, 0]; B.enc[hit.id] = [e[0], e[1], 1]; aggiornaIngressi(); B.drag = { kind: 'encsw', id: hit.id }; return; }
+    const vicinoAlForo = Math.hypot(m[0] - g[0], m[1] - g[1]) < 0.42;
+    // in modalità filo, o su un foro/pin libero: parte un filo (clic-clic, o trascinando)
+    if (B.modo === 'filo' || (!hit.comp && !hit.wire && vicinoAlForo && terminale(g))) {
+      if (B.modo === 'filo' && !terminale(g)) { messaggioStato('Un filo parte da un foro o da un pin'); return; }
+      B.sel.clear(); disegnaSelezione();
+      iniziaFilo(g);
+      B.drag = { kind: 'filoGiu', start: g, mosso: false };
+      return;
+    }
     if (hit.comp) {
-      if (!ev.shiftKey && !B.sel.has(hit.comp)) B.sel = new Set();
-      B.sel.add(hit.comp);
+      if (!ev.ctrlKey && !ev.metaKey && !B.sel.has(hit.comp)) B.sel = new Set();
+      if ((ev.ctrlKey || ev.metaKey) && B.sel.has(hit.comp)) B.sel.delete(hit.comp); else B.sel.add(hit.comp);
       disegnaSelezione();
       B.drag = { kind: 'comp', start: g, prima: JSON.stringify(B.bb), mosso: false };
       return;
     }
     if (hit.wire) {
       const w = B.bb.wires.find(w => w.id === hit.wire);
-      if (!ev.shiftKey) B.sel = new Set();
+      if (!ev.ctrlKey && !ev.metaKey) B.sel = new Set();
       B.sel.add(w.id); disegnaSelezione();
-      const pf = puntoFilo(w, m);
-      B.drag = { kind: 'wire', id: w.id, prima: JSON.stringify(B.bb), mosso: false, ...pf, start: g };
+      B.drag = { kind: 'wire', id: w.id, prima: JSON.stringify(B.bb), mosso: false, ...puntoFilo(w, m), start: g };
       return;
     }
-    // su un foro o un piedino: nuovo filo; altrimenti si sposta la vista
-    const suForo = K.FORI.has(K.chiave(g[0], g[1])) && Math.hypot(m[0] - g[0], m[1] - g[1]) < 0.45;
-    const suPiedino = B.bb.comps.some(c => K.piediniXY(c).some(p => p.x === g[0] && p.y === g[1]));
-    if (suForo || suPiedino) {
-      B.sel.clear(); disegnaSelezione();
-      B.drag = { kind: 'nuovo', from: g, to: g };
-      return;
-    }
-    if (B.sel.size) { B.sel.clear(); disegnaSelezione(); }
-    B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } };
+    // sul vuoto: rettangolo di selezione
+    if (!ev.ctrlKey && !ev.metaKey && B.sel.size) { B.sel.clear(); disegnaSelezione(); }
+    B.drag = { kind: 'rett', da: m, a: m };
   });
   svg.addEventListener('pointermove', ev => {
     const m = mondo(ev), g = griglia(m);
     if (!B.hover || B.hover[0] !== g[0] || B.hover[1] !== g[1]) { B.hover = g; aggiornaStato(); }
     const d = B.drag;
-    if (B.posa) { const gh = $('#bb-ghost'); gh.setAttribute('transform', `translate(${g[0] * P} ${g[1] * P})`); return; }
+    if (B.posa) {
+      $('#bb-ghost').setAttribute('transform', `translate(${g[0] * P} ${g[1] * P})`);
+      const finto = { id: '_posa', type: B.posa, x: g[0], y: g[1], rot: 0, opt: Object.fromEntries(K.OPZIONI[B.posa].map(([k, v]) => [k, v])) };
+      messaggioStato(controllaAggancio([finto]).join(' · ') || 'Clicca per posarlo · R ruota dopo · Esc annulla');
+      return;
+    }
+    $('#bb-ghost').removeAttribute('transform');
+    if (B.filo) { B.filo.cur = g; if (d && d.kind === 'filoGiu' && (g[0] !== d.start[0] || g[1] !== d.start[1])) d.mosso = true; disegnaFiloInCorso(); return; }
     if (!d) return;
     if (d.kind === 'pan') {
       const r = svg.getBoundingClientRect(), k = B.vista.w / r.width;
       B.vista.x = d.v.x - (ev.clientX - d.start[0]) * k; B.vista.y = d.v.y - (ev.clientY - d.start[1]) * k;
       applicaVista();
-    } else if (d.kind === 'comp') {
+    } else if (d.kind === 'comp' || d.kind === 'muovi') {
       const dx = g[0] - d.start[0], dy = g[1] - d.start[1];
       if (!dx && !dy) return;
       d.start = g; d.mosso = true;
-      for (const c of B.bb.comps) if (B.sel.has(c.id)) { c.x += dx; c.y += dy; }
-      for (const w of B.bb.wires) if (B.sel.has(w.id)) w.p = w.p.map(([x, y]) => [x + dx, y + dy]);
+      spostaSelezione(dx, dy);
       disegnaComponenti();
+      const sel = B.bb.comps.filter(c => B.sel.has(c.id));
+      if (sel.length) messaggioStato(controllaAggancio(sel).join(' · '));
     } else if (d.kind === 'wire') {
       const w = B.bb.wires.find(w => w.id === d.id);
       if (!w || (g[0] === d.start[0] && g[1] === d.start[1] && !d.mosso)) return;
@@ -686,28 +837,35 @@ function wire() {
       if (d.punto !== undefined) w.p[d.punto] = g;
       d.mosso = true;
       disegnaComponenti();
-    } else if (d.kind === 'nuovo') {
-      d.to = g;
-      const col = coloreFilo(d.from);
-      $('#bb-ghost').setAttribute('transform', '');
-      $('#bb-ghost').innerHTML = `<line x1="${d.from[0] * P}" y1="${d.from[1] * P}" x2="${g[0] * P}" y2="${g[1] * P}" stroke="${col}" stroke-width="3" stroke-linecap="round" opacity=".8"/>`;
+    } else if (d.kind === 'rett') {
+      d.a = m;
+      const [x0, x1] = [Math.min(d.da[0], m[0]), Math.max(d.da[0], m[0])], [y0, y1] = [Math.min(d.da[1], m[1]), Math.max(d.da[1], m[1])];
+      $('#bb-ghost').innerHTML = `<rect x="${x0 * P}" y="${y0 * P}" width="${(x1 - x0) * P}" height="${(y1 - y0) * P}" fill="#4f9dff" fill-opacity=".1" stroke="#4f9dff" stroke-dasharray="4 3"/>`;
     }
   });
   const fine = ev => {
-    const d = B.drag; B.drag = null;
-    if (!d) return;
+    const d = B.drag;
+    svg.classList.remove('pan');
+    if (!d || d.kind === 'muovi') return;
+    B.drag = null;
     if (d.kind === 'press') premi(d.id, false);
     else if (d.kind === 'encsw') setTimeout(() => { const e = B.enc[d.id] || [0, 0, 0]; B.enc[d.id] = [e[0], e[1], 0]; aggiornaIngressi(); }, 120);
-    else if ((d.kind === 'comp' || d.kind === 'wire') && d.mosso) {
+    else if (d.kind === 'filoGiu') {
+      // trascinato fino a un altro foro: il filo finisce lì; se no si continua a clic
+      const g = B.hover;
+      if (d.mosso && g && terminale(g) && (g[0] !== d.start[0] || g[1] !== d.start[1])) finisciFilo(g);
+    } else if ((d.kind === 'comp' || d.kind === 'wire') && d.mosso) {
+      $('#bb-sel-aggancio').innerHTML = ''; messaggioStato('');
       B.undo.push(d.prima); B.redo = [];
       B.bb = K.pulisciBreadboard(B.bb); cambiato();
-    } else if (d.kind === 'nuovo') {
+    } else if (d.kind === 'rett') {
       $('#bb-ghost').innerHTML = '';
-      if (d.to[0] !== d.from[0] || d.to[1] !== d.from[1]) {
-        const w = { id: nuovoId('w'), p: [d.from, d.to], col: coloreFilo(d.from) };
-        modifica(bb => bb.wires.push(w));
-        B.sel = new Set([w.id]); disegnaSelezione();
-      }
+      const [x0, x1] = [Math.min(d.da[0], d.a[0]), Math.max(d.da[0], d.a[0])], [y0, y1] = [Math.min(d.da[1], d.a[1]), Math.max(d.da[1], d.a[1])];
+      if (x1 - x0 < 0.3 && y1 - y0 < 0.3) return;
+      const dentro = ([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+      for (const c of B.bb.comps) if (K.piediniXY(c).every(p => dentro([p.x, p.y]))) B.sel.add(c.id);
+      for (const w of B.bb.wires) if (w.p.every(dentro)) B.sel.add(w.id);
+      disegnaSelezione();
     }
   };
   svg.addEventListener('pointerup', fine);
@@ -715,7 +873,7 @@ function wire() {
   svg.addEventListener('pointerleave', () => { B.hover = null; aggiornaStato(); });
   svg.addEventListener('dblclick', ev => {
     const hit = colpito(ev);
-    if (!hit.wire) return;
+    if (!hit.wire || B.filo) return;
     const w = B.bb.wires.find(w => w.id === hit.wire), pf = puntoFilo(w, mondo(ev));
     if (pf.punto > 0 && pf.punto < w.p.length - 1) modifica(() => { const x = B.bb.wires.find(x => x.id === w.id); x.p.splice(pf.punto, 1); });
   });
@@ -725,66 +883,51 @@ function wire() {
     if (hit.act === 'enc') { scatto(hit.id, ev.deltaY > 0 ? 1 : -1); return; }
     if (hit.act === 'pot') { const c = B.bb.comps.find(c => c.id === hit.id); impostaPot(c, c.opt.pos + (ev.deltaY > 0 ? -0.02 : 0.02)); return; }
     const m = mondo(ev);
-    zoom(ev.deltaY > 0 ? 1.12 : 1 / 1.12, m[0], m[1]);
+    zoom(Math.exp(Math.max(-0.5, Math.min(0.5, ev.deltaY * (ev.deltaMode ? 0.05 : 0.0015)))), m[0], m[1]);
   }, { passive: false });
-  svg.addEventListener('keydown', ev => {
-    const k = ev.key.toLowerCase(), mod = ev.ctrlKey || ev.metaKey;
-    if (mod && k === 'z') { ev.preventDefault(); ev.shiftKey ? ripeti() : annulla(); }
-    else if (mod && k === 'y') { ev.preventDefault(); ripeti(); }
-    else if (mod && k === 'c') { ev.preventDefault(); copia(); }
-    else if (mod && k === 'v') { ev.preventDefault(); incolla(); }
-    else if (mod && k === 'd') { ev.preventDefault(); copia(); incolla(); }
-    else if (!mod && k === 'r') ruotaSel();
-    else if (k === 'delete' || k === 'backspace') { ev.preventDefault(); elimina(); }
-    else if (k === 'escape' && $('#pane-breadboard').classList.contains('bb-grande') && !B.posa && !B.sel.size) { $('#pane-breadboard').classList.remove('bb-grande'); setTimeout(adatta, 30); }
-    else if (k === 'escape') { B.posa = null; $('#bb-svg').classList.remove('posa'); $('#bb-ghost').innerHTML = ''; B.sel.clear(); disegnaSelezione(); }
-  });
-  // barra
-  $('#bb-add').addEventListener('change', e => {
-    const t = e.target.value; e.target.value = '';
-    if (!K.TIPI[t]) return;
-    B.posa = t; svg.classList.add('posa'); svg.focus();
-    $('#bb-ghost').innerHTML = `<g opacity=".6">${compSVG({ id: 'ghost', type: t, opt: Object.fromEntries(K.OPZIONI[t].map(([k, d]) => [k, d])) })}</g>`;
-  });
-  const btn = (id, fn) => $(id).addEventListener('click', () => { fn(); svg.focus(); });
-  btn('#bb-ruota', ruotaSel); btn('#bb-elimina', elimina); btn('#bb-copia', copia); btn('#bb-incolla', incolla);
-  btn('#bb-annulla', annulla); btn('#bb-ripeti', ripeti);
-  btn('#bb-zin', () => zoom(1 / 1.25)); btn('#bb-zout', () => zoom(1.25)); btn('#bb-adatta', adatta);
-  btn('#bb-png', esportaPNG);
-  btn('#bb-grande', () => { $('#pane-breadboard').classList.toggle('bb-grande'); setTimeout(adatta, 30); });
-  $('#bb-esempio').addEventListener('change', e => {
-    const v = e.target.value; e.target.value = '';
-    if (!v) return;
-    if (B.bb.comps.length && !confirm('Sostituisco il circuito della breadboard con l\'esempio? (Puoi tornare indietro con Annulla.)')) return;
-    modifica(bb => { const x = K.esempioCronometro(v === '1k5' ? 1500 : 15000); bb.comps = x.comps; bb.wires = x.wires; });
-    B.sel.clear(); disegnaSelezione();
-  });
-  btn('#bb-svuota', () => { if (B.bb.comps.length + B.bb.wires.length && confirm('Tolgo tutti i componenti e i fili? (Puoi tornare indietro con Annulla.)')) { modifica(bb => { bb.comps = []; bb.wires = []; }); B.sel.clear(); disegnaSelezione(); } });
-  $('#bb-colori').innerHTML = K.COLORI_FILO.map(c => `<button class="bbcol" data-col="${c}" style="background:${c}" title="Colore del filo"></button>`).join('');
-  $('#bb-colori').addEventListener('click', e => {
-    const c = e.target.dataset && e.target.dataset.col;
-    if (!c) return;
-    B.colore = c;
-    const ws = [...B.sel].filter(id => B.bb.wires.some(w => w.id === id));
-    if (ws.length) modifica(bb => { for (const w of bb.wires) if (B.sel.has(w.id)) w.col = c; });
-    aggiornaBottoni();
-  });
-  new ResizeObserver(() => { if (!B.vistaFatta && $('#bb-svg').getBoundingClientRect().width > 50) { B.vistaFatta = true; adatta(); } }).observe(svg);
+  document.addEventListener('keydown', tasti);
+  new ResizeObserver(() => { if (!B.vistaFatta && svg.getBoundingClientRect().width > 50) { B.vistaFatta = true; adatta(); } }).observe(svg);
 }
-// colore iniziale: rosso dalle alimentazioni, nero da GND, se no quello scelto
-function coloreFilo(g) {
-  const f = K.FORI.get(K.chiave(g[0], g[1]));
-  const n = f && f.net;
-  if (n === '5V' || n === '3V3' || n === 'bb:T+' || n === 'bb:B+') return K.COLORI_FILO[0];
-  if (n === 'GND' || n === 'bb:T-' || n === 'bb:B-') return K.COLORI_FILO[1];
-  return B.colore;
+function finisciMuovi() {
+  const d = B.drag;
+  B.drag = null;
+  $('#bb-svg').classList.remove('sposta'); $('#bb-sel-aggancio').innerHTML = ''; messaggioStato('');
+  if (!d.mosso) return;
+  if (!d.copia) { B.undo.push(d.prima); B.redo = []; }   // copia e spostamento: un solo passo da annullare (l'incolla)
+  B.bb = K.pulisciBreadboard(B.bb); cambiato();
+}
+// tasti: in tutta la pagina, tranne mentre si scrive o con una finestra aperta
+function tasti(ev) {
+  const t = ev.target;
+  if (t && (t.closest('input, textarea, select, [contenteditable], .cm-editor') || t.isContentEditable)) return;
+  if (document.querySelector('dialog[open]') || document.querySelector('.tour-card')) return;
+  const k = ev.key.toLowerCase(), mod = ev.ctrlKey || ev.metaKey;
+  if (mod && k === 'z') { ev.preventDefault(); ev.shiftKey ? ripeti() : annulla(); }
+  else if (mod && k === 'y') { ev.preventDefault(); ripeti(); }
+  else if (mod && k === 'c') { if (B.sel.size) { ev.preventDefault(); copia(); } }
+  else if (mod && k === 'v') { if (B.clip) { ev.preventDefault(); incolla(); } }
+  else if (mod && k === 'd') { ev.preventDefault(); copia(); incolla(); }
+  else if (mod && k === 'a') { ev.preventDefault(); B.sel = new Set([...B.bb.comps.map(c => c.id), ...B.bb.wires.map(w => w.id)]); disegnaSelezione(); }
+  else if (mod || ev.altKey) return;
+  else if (k === 'r') { ev.preventDefault(); if (B.posa) messaggioStato('Prima posa il componente, poi R'); else ruotaSel(); }
+  else if (k === 'm') { ev.preventDefault(); iniziaMuovi(false); }
+  else if (k === 'c') { ev.preventDefault(); iniziaMuovi(true); }
+  else if (k === 'w') { ev.preventDefault(); if (B.hover && terminale(B.hover) && !B.filo) { impostaModo('filo'); iniziaFilo(B.hover); } else impostaModo('filo'); }
+  else if (k === 'f') { ev.preventDefault(); adatta(); }
+  else if (k === 'delete' || k === 'backspace') {
+    if (B.filo) { ev.preventDefault(); if (B.filo.pts.length > 1) { B.filo.pts.pop(); disegnaFiloInCorso(); } else annullaComando(); }
+    else if (B.sel.size) { ev.preventDefault(); elimina(); }
+  }
+  else if (k === 'escape') { if (annullaComando()) ev.preventDefault(); }
+  else if (k === '?' || (ev.shiftKey && k === "'")) { ev.preventDefault(); $('#bb-aiuto').showModal(); }
 }
 function aggiornaBottoni() {
   const sel = B.sel.size > 0;
-  $('#bb-elimina').disabled = !sel; $('#bb-copia').disabled = !sel; $('#bb-ruota').disabled = ![...B.sel].some(id => B.bb.comps.some(c => c.id === id));
+  $('#bb-elimina').disabled = !sel; $('#bb-copia').disabled = !sel; $('#bb-ruota').disabled = !sel;
   $('#bb-incolla').disabled = !B.clip; $('#bb-annulla').disabled = !B.undo.length; $('#bb-ripeti').disabled = !B.redo.length;
   document.querySelectorAll('.bbcol').forEach(b => b.classList.toggle('on', b.dataset.col === B.colore));
 }
+
 function impostaPot(c, pos) {
   pos = Math.max(0, Math.min(1, Math.round(pos * 100) / 100));
   // il cursore non va nell'annulla (cambia di continuo): si salva e basta
@@ -805,8 +948,8 @@ function pannelloProprieta() {
   aggiornaBottoni();
   if (!c) {
     const w = ids.length === 1 && B.bb.wires.find(w => w.id === ids[0]);
-    box.innerHTML = w ? `<span class="muted small">Filo: trascina un estremo per spostarlo, trascina il filo per piegarlo, doppio clic su una piega per toglierla; colore dalla tavolozza.</span>`
-      : `<span class="muted small">${B.bb.comps.length ? 'Clic su un componente per le sue proprietà · trascina da un foro per tirare un filo · rotella = zoom, trascina il fondo per spostarti · R ruota, Canc elimina, ⌘/Ctrl+Z annulla.' : 'Aggiungi un componente dal menu, o carica l\'esempio del cronometro. Trascina da un foro all\'altro per tirare un filo.'}</span>`;
+    box.innerHTML = w ? `<span class="muted small">Filo: trascina un estremo per spostarlo, trascina il filo per piegarlo, doppio clic su un angolo per toglierlo · colore dalla tavolozza · R ruota · Canc elimina</span>`
+      : `<span class="muted small">${B.bb.comps.length ? 'Clic su un componente per le sue proprietà · clic su un foro e clic sull\'arrivo = filo · rotella = zoom, Maiusc+trascina = sposta la vista · R ruota, M sposta, C copia, Canc elimina · ? = tutti i comandi' : 'Trascina un componente dalla palette a sinistra, o carica un esempio (Esempi…). Clic su un foro e clic sull\'arrivo per un filo. ? = tutti i comandi.'}</span>`;
     return;
   }
   const info = K.TIPI[c.type].nome, o = c.opt;
@@ -873,32 +1016,164 @@ async function esportaPNG() {
 }
 
 // ------------------------------------------------------------------
-// Avvio
+// Avvio: barra degli strumenti del banco, palette a sinistra, finestra delle scorciatoie
+const IC = {   // icone SVG locali (24×24, tratto = colore del testo)
+  sel: '<path d="M5 3l14 8-6 1.5L10 19z"/>',
+  filo: '<path d="M4 18h6V6h10"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="6" r="2"/>',
+  ruota: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>',
+  elimina: '<path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"/>',
+  copia: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  incolla: '<rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3h6v2M9 11h6M9 15h4"/>',
+  annulla: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  ripeti: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  piu: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5M11 8v6M8 11h6"/>',
+  meno: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5M8 11h6"/>',
+  adatta: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  png: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 8"/>',
+  grande: '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>',
+  aiuto: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7v.5M12 17h.01"/>',
+};
+const ic = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
+const CATEGORIE = [
+  ['Base', ['res', 'pot', 'cap', 'jumper']],
+  ['LED e display', ['led', 'seg7', 'seg7x3', 'diode']],
+  ['Transistor', ['npn', 'pnp']],
+  ['Ingressi', ['button', 'encoder']],
+  ['Uscite', ['buzzer', 'servo', 'motor']],
+];
+const NOME_CORTO = { res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: 'Display 1 cifra', seg7x3: 'Display 3 cifre',
+  diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC' };
+function iconaComp(tipo) {
+  const c = { id: 'ico', type: tipo, x: 0, y: 0, rot: 0, opt: Object.fromEntries(K.OPZIONI[tipo].map(([k, v]) => [k, v])) };
+  return `<svg viewBox="0 0 10 10" data-icona="${tipo}"><g>${compSVG(c)}</g></svg>`;
+}
+function palette() {
+  const box = $('#palette');
+  if (!box) return;
+  box.innerHTML = `<div class="pal-cerca"><input id="pal-cerca" type="search" placeholder="Cerca componente…" aria-label="Cerca componente"></div>` +
+    CATEGORIE.map(([cat, tipi]) => `<div class="pal-cat" data-cat="${esc(cat)}"><h4>${esc(cat)}</h4><div class="pal-griglia">${tipi.map(t =>
+      `<button type="button" class="pal-voce" data-tipo="${t}" title="${esc(K.TIPI[t].nome)} — trascinalo sulla breadboard, o clicca e poi clicca dove posarlo">${iconaComp(t)}<span>${esc(NOME_CORTO[t])}</span></button>`).join('')}</div></div>`).join('') +
+    `<p class="pal-vuoto muted small" hidden>Nessun componente con questo nome.</p>`;
+  // viewBox delle icone dalla forma vera
+  box.querySelectorAll('svg[data-icona]').forEach(s => { try { const b = s.firstChild.getBBox(), m = 3; s.setAttribute('viewBox', `${b.x - m} ${b.y - m} ${b.width + 2 * m} ${b.height + 2 * m}`); } catch {} });
+  $('#pal-cerca').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    let n = 0;
+    box.querySelectorAll('.pal-voce').forEach(v => { const t = v.dataset.tipo, ok = !q || (NOME_CORTO[t] + ' ' + K.TIPI[t].nome).toLowerCase().includes(q); v.hidden = !ok; n += ok; });
+    box.querySelectorAll('.pal-cat').forEach(c => { c.hidden = ![...c.querySelectorAll('.pal-voce')].some(v => !v.hidden); });
+    box.querySelector('.pal-vuoto').hidden = n > 0;
+  });
+  // clic: si posa con un clic sul banco; trascinare: si lascia sul banco
+  box.querySelectorAll('.pal-voce').forEach(v => {
+    v.addEventListener('pointerdown', ev => {
+      if (ev.button !== 0) return;
+      const t = v.dataset.tipo, x0 = ev.clientX, y0 = ev.clientY;
+      let trascina = false;
+      const muovi = e => {
+        if (!trascina && Math.hypot(e.clientX - x0, e.clientY - y0) > 6) { trascina = true; scegli(t); }
+        // sopra il disegno l'evento ci arriva da solo; fuori (palette) lo si inoltra, senza farlo risalire
+        if (trascina && !(e.target.closest && e.target.closest('#bb-svg'))) $('#bb-svg').dispatchEvent(new PointerEvent('pointermove', { clientX: e.clientX, clientY: e.clientY }));
+      };
+      const su = e => {
+        document.removeEventListener('pointermove', muovi); document.removeEventListener('pointerup', su);
+        if (!trascina) { scegli(t); return; }
+        const r = $('#bb-svg').getBoundingClientRect();
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          const svg = $('#bb-svg'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+          const q = pt.matrixTransform(svg.getScreenCTM().inverse()), g = griglia([q.x / P, q.y / P]);
+          annullaComando(); aggiungi(t, g[0], g[1]);
+        } else annullaComando();
+      };
+      document.addEventListener('pointermove', muovi); document.addEventListener('pointerup', su);
+    });
+  });
+}
+function scegli(t) {
+  annullaComando();
+  if (B.filo) return;
+  B.posa = t; $('#bb-svg').classList.add('posa');
+  document.querySelectorAll('.pal-voce').forEach(x => x.classList.toggle('on', x.dataset.tipo === t));
+  $('#bb-ghost').innerHTML = `<g opacity=".65">${compSVG({ id: 'ghost', type: t, opt: Object.fromEntries(K.OPZIONI[t].map(([k, d]) => [k, d])) })}</g>`;
+  messaggioStato(`${K.TIPI[t].nome}: clicca sulla breadboard dove posarlo · Esc annulla`);
+}
 function monta() {
   const pane = $('#pane-breadboard');
+  const b = (id, icona, titolo, testo = '') => `<button id="${id}" type="button" title="${esc(titolo)}">${ic(icona)}${testo ? `<span>${testo}</span>` : ''}</button>`;
   pane.innerHTML = `
     <div class="bb-barra">
-      <select id="bb-add" title="Aggiungi un componente: poi clicca sulla breadboard dove posarlo"><option value="">＋ Componente…</option>${Object.entries(K.TIPI).map(([t, x]) => `<option value="${t}">${esc(x.nome)}</option>`).join('')}</select>
-      <div class="seg"><button id="bb-ruota" title="Ruota di 90° (R)">⟳</button><button id="bb-elimina" title="Elimina (Canc)">✕</button><button id="bb-copia" title="Copia (⌘/Ctrl+C)">⧉</button><button id="bb-incolla" title="Incolla (⌘/Ctrl+V)">📋</button></div>
-      <div class="seg"><button id="bb-annulla" title="Annulla (⌘/Ctrl+Z)">↶</button><button id="bb-ripeti" title="Ripeti (⌘/Ctrl+Shift+Z)">↷</button></div>
-      <div class="seg"><button id="bb-zin" title="Zoom avanti (anche con la rotella)">+</button><button id="bb-zout" title="Zoom indietro">−</button><button id="bb-adatta" title="Tutta la scheda">⤢</button></div>
-      <span id="bb-colori" class="bb-colori"></span>
+      <div class="bb-strumento">${b('bb-t-sel', 'sel', 'Seleziona e sposta (Esc)')}${b('bb-t-filo', 'filo', 'Filo: clic su un foro, clic sull\'arrivo (W)')}</div>
+      <div class="bb-strumento">${b('bb-ruota', 'ruota', 'Ruota di 90° (R)')}${b('bb-elimina', 'elimina', 'Elimina (Canc)')}${b('bb-copia', 'copia', 'Copia (⌘/Ctrl+C; C = copia e sposta)')}${b('bb-incolla', 'incolla', 'Incolla (⌘/Ctrl+V)')}</div>
+      <div class="bb-strumento">${b('bb-annulla', 'annulla', 'Annulla (⌘/Ctrl+Z)')}${b('bb-ripeti', 'ripeti', 'Ripeti (⌘/Ctrl+Y)')}</div>
+      <div class="bb-strumento">${b('bb-zin', 'piu', 'Zoom avanti (rotella)')}${b('bb-zout', 'meno', 'Zoom indietro (rotella)')}${b('bb-adatta', 'adatta', 'Adatta alla finestra (F)')}</div>
+      <span id="bb-colori" class="bb-colori" title="Colore del filo selezionato"></span>
       <select id="bb-esempio" title="Circuiti pronti"><option value="">Esempi…</option><option value="15k">Cronometro 3 cifre (Prog_3digit, R11 = 15k come montato)</option><option value="1k5">Cronometro 3 cifre (R11 = 1,5k corretto)</option></select>
-      <button id="bb-png" class="ghost small" title="Scarica l'immagine del montaggio (per le relazioni)">PNG</button>
-      <button id="bb-svuota" class="ghost small" title="Togli tutto">Svuota</button>
-      <button id="bb-grande" class="ghost small" title="Breadboard a tutto schermo (di nuovo per tornare)">⛶</button>
+      <span class="tabs-sp"></span>
+      <div class="bb-strumento">${b('bb-png', 'png', 'Scarica l\'immagine del montaggio (per le relazioni)', 'PNG')}${b('bb-svuota', 'elimina', 'Togli tutto', 'Svuota')}</div>
+      <div class="bb-strumento">${b('bb-aiuto-btn', 'aiuto', 'Scorciatoie e guida (?)')}${b('bb-grande', 'grande', 'Banco a tutto schermo')}</div>
     </div>
     <div id="bb-prop" class="bb-prop"></div>
     <div class="bb-wrap"><svg id="bb-svg" tabindex="0" xmlns="${NS}">
-      <defs><filter id="bb-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4"/></filter></defs>
-      <g id="bb-static">${disegnoStatico()}</g><g id="bb-comps"></g><g id="bb-wires"></g><g id="bb-prob"></g><g id="bb-nodo"></g><g id="bb-sel"></g><g id="bb-ghost"></g>
+      <defs><filter id="bb-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4"/></filter>
+        <pattern id="bb-punti" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5" r=".8" fill="var(--banco-punto)"/></pattern></defs>
+      <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#bb-punti)"/>
+      <g id="bb-static">${disegnoStatico()}</g><g id="bb-comps"></g><g id="bb-wires"></g><g id="bb-prob"></g><g id="bb-nodo"></g><g id="bb-sel"></g><g id="bb-sel-aggancio"></g><g id="bb-ghost"></g>
     </svg></div>
     <div id="bb-problemi" class="bb-problemi small" hidden></div>
-    <div id="bb-stato" class="bb-stato small mono"></div>`;
+    <div id="bb-stato" class="bb-stato small mono"></div>
+    <dialog id="bb-aiuto" class="scorciatoie">
+      <form method="dialog">
+        <h2>Banco di lavoro: comandi</h2>
+        <table>
+          <tr><td>Componente</td><td>Trascinalo dalla palette, o cliccalo e poi clicca sulla breadboard. Verde = si aggancia, rosso = fuori dai fori o occupato, arancione = due piedini sulla stessa fila.</td></tr>
+          <tr><td>Filo</td><td>Clic su un foro o un pin, clic sull'arrivo: si fa da solo a 90°, rosso per 5V/3V3, nero per GND. Clic fuori dai fori o <kbd>Alt</kbd>+clic su un foro = angolo. Si può anche tirare tenendo premuto.</td></tr>
+          <tr><td>Modificare un filo</td><td>Trascina un estremo per spostarlo, trascina il filo per piegarlo, doppio clic su un angolo per toglierlo, colore dalla tavolozza.</td></tr>
+          <tr><td><kbd>W</kbd></td><td>filo (dal punto sotto il mouse, se è un foro)</td></tr>
+          <tr><td><kbd>R</kbd></td><td>ruota la selezione di 90° (componenti, ponticelli e fili)</td></tr>
+          <tr><td><kbd>M</kbd> / <kbd>C</kbd></td><td>sposta / copia la selezione: muovi il mouse e clicca</td></tr>
+          <tr><td><kbd>Canc</kbd> o <kbd>⌫</kbd></td><td>elimina (durante un filo: toglie l'ultimo angolo)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>annulla il comando in corso, poi toglie la selezione</td></tr>
+          <tr><td><kbd>F</kbd></td><td>adatta tutto alla finestra</td></tr>
+          <tr><td>rotella</td><td>zoom sul puntatore (sulla manopola di encoder e potenziometro: la gira)</td></tr>
+          <tr><td>rotella premuta o <kbd>Maiusc</kbd>+trascina</td><td>sposta la vista</td></tr>
+          <tr><td>trascina sul vuoto</td><td>rettangolo di selezione (<kbd>⌘/Ctrl</kbd>+clic aggiunge o toglie)</td></tr>
+          <tr><td><kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>annulla / ripeti</td></tr>
+          <tr><td><kbd>⌘/Ctrl</kbd>+<kbd>C</kbd> <kbd>V</kbd> <kbd>D</kbd> <kbd>A</kbd></td><td>copia, incolla, duplica, seleziona tutto</td></tr>
+        </table>
+        <div class="right"><button type="button" id="bb-rivedi-tour" class="ghost">Rivedi la guida</button> <button class="primary">Ho capito</button></div>
+      </form>
+    </dialog>`;
   wire();
+  palette();
+  const btn = (id, fn) => $(id).addEventListener('click', () => { fn(); });
+  btn('#bb-t-sel', () => { annullaComando(); impostaModo('sel'); });
+  btn('#bb-t-filo', () => impostaModo(B.modo === 'filo' ? 'sel' : 'filo'));
+  btn('#bb-ruota', ruotaSel); btn('#bb-elimina', elimina); btn('#bb-copia', copia); btn('#bb-incolla', () => incolla());
+  btn('#bb-annulla', annulla); btn('#bb-ripeti', ripeti);
+  btn('#bb-zin', () => zoom(1 / 1.25)); btn('#bb-zout', () => zoom(1.25)); btn('#bb-adatta', adatta);
+  btn('#bb-png', esportaPNG);
+  btn('#bb-aiuto-btn', () => $('#bb-aiuto').showModal());
+  btn('#bb-rivedi-tour', () => { $('#bb-aiuto').close(); if (window.SVlayout) SVlayout.tour(); });
+  btn('#bb-grande', () => { $('#pane-breadboard').classList.toggle('bb-grande'); setTimeout(adatta, 30); });
+  $('#bb-esempio').addEventListener('change', e => {
+    const v = e.target.value; e.target.value = '';
+    if (!v) return;
+    if (B.bb.comps.length && !confirm('Sostituisco il circuito della breadboard con l\'esempio? (Puoi tornare indietro con Annulla.)')) return;
+    modifica(bb => { const x = K.esempioCronometro(v === '1k5' ? 1500 : 15000); bb.comps = x.comps; bb.wires = x.wires; });
+    B.sel.clear(); disegnaSelezione();
+  });
+  btn('#bb-svuota', () => { if (B.bb.comps.length + B.bb.wires.length && confirm('Tolgo tutti i componenti e i fili? (Puoi tornare indietro con Annulla.)')) { modifica(bb => { bb.comps = []; bb.wires = []; }); B.sel.clear(); disegnaSelezione(); } });
+  $('#bb-colori').innerHTML = K.COLORI_FILO.map(c => `<button class="bbcol" data-col="${c}" style="background:${c}" title="Colore del filo selezionato"></button>`).join('');
+  $('#bb-colori').addEventListener('click', e => {
+    const c = e.target.dataset && e.target.dataset.col;
+    if (!c) return;
+    B.colore = c;
+    if ([...B.sel].some(id => B.bb.wires.some(w => w.id === id))) modifica(bb => { for (const w of bb.wires) if (B.sel.has(w.id)) w.col = c; });
+    aggiornaBottoni();
+  });
+  impostaModo('sel');
   applicaVista();
   disegnaComponenti();
 }
 monta();
 // per le prove (strumenti/prova-breadboard-browser.mjs) e per la console
-Object.assign(B, { lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });
+Object.assign(B, { lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });

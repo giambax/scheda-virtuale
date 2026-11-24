@@ -4,9 +4,10 @@
 // Chi è amministratore lo decide il database (is_admin(), legato all'ID): il pulsante si vede solo
 // all'utente giamba, ma è solo una comodità, la sicurezza la fanno le regole RLS.
 // Tutto quello che scrivono gli utenti si mostra con textContent, mai come HTML.
-import { SEGN, SEGN_STATI } from './remote.js';
+import { SEGN, SEGN_STATI } from './remote.js?v=2026-11-24e';
 
-export const VERSIONE_SITO = '2026-11-24';
+// versione del sito: quella nell'indirizzo di questo file (?v=…, la mette strumenti/alza-versione.sh)
+export const VERSIONE_SITO = new URL(import.meta.url).searchParams.get('v') || 'sviluppo';
 const ADMIN_NOME = 'giamba';
 const BOZZA = 'sv-segnala-bozza', ULTIMA = 'sv-segnala-ultima';
 const ATTESA_MS = 30000;

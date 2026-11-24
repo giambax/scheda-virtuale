@@ -1,11 +1,12 @@
 // sw.js — service worker della Scheda Virtuale.
 // 1) Cache: dopo la prima apertura il sito (anche il compilatore) funziona senza Internet.
+//    Script, CSS e sim/ hanno ?v=<versione> (strumenti/alza-versione.sh): offline si cerca senza ?v (ignoreSearch).
 //    - vendor/ (compilatore, ~100 MB non compressi): prima la cache, la rete solo se manca
 //    - il resto (pagina, script, simulatore): prima la rete, la cache se si è offline
 //    Cambiando VERSIONE la cache vecchia si cancella (es. nuovo compilatore).
 // 2) Intestazioni COOP/COEP: senza queste il browser non dà lo SharedArrayBuffer
 //    che serve alla simulazione (GitHub Pages non permette di impostarle dal server).
-const VERSIONE = 'sv-2026-11-23c';
+const VERSIONE = 'sv-2026-11-24e';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(
@@ -32,7 +33,11 @@ async function answer(req) {
   }
   try {
     const r = await fetch(req, { cache: 'no-cache' });
-    if (r.ok) cache.put(req, r.clone());
+    if (r.ok) {
+      // file con ?v=… (strumenti/alza-versione.sh): in cache resta solo l'ultima versione di ogni file
+      if (new URL(req.url).searchParams.has('v')) await cache.delete(req, { ignoreSearch: true });
+      cache.put(req, r.clone());
+    }
     return r;
   } catch (e) {
     const hit = await cache.match(req, { ignoreSearch: true });

@@ -3,18 +3,18 @@
 // ascoltano /api/events. Qui fetch ed EventSource vengono intercettati e la
 // stessa API è fatta con IndexedDB (progetti per nome utente), un worker che
 // compila (clang in WebAssembly) e un worker che esegue la scheda.
-import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js';
-import { makeInput, writeInput } from './sim-runtime.js';
-import { readIoc, pinsFromMainH, mcuDefine } from './build.js';
+import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-24e';
+import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-24e';
+import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-24e';
 import { unzipSync, zipSync } from '../vendor/fflate/esm/browser.js';
 
 const dec = new TextDecoder();
 
-import * as CFG from './config.js';
-import { supabaseRemote, fintoRemote } from './remote.js';
-import { sincronizza } from './sync.js';
-import { leggiLink, esercizioPulito } from './link.js';
-import { pulisciBreadboard } from './circuito.js';
+import * as CFG from './config.js?v=2026-11-24e';
+import { supabaseRemote, fintoRemote } from './remote.js?v=2026-11-24e';
+import { sincronizza } from './sync.js?v=2026-11-24e';
+import { leggiLink, esercizioPulito } from './link.js?v=2026-11-24e';
+import { pulisciBreadboard } from './circuito.js?v=2026-11-24e';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -230,7 +230,7 @@ function absorb(line) {
 
 // ------------------------------------------------------------------
 // Compilatore (worker che resta vivo: il clang da ~100 MB si carica una volta sola)
-const compiler = new Worker(new URL('./compiler-worker.js', import.meta.url), { type: 'module' });
+const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-24e', import.meta.url), { type: 'module' });
 let compSeq = 0;
 const compPending = new Map();
 let compReady = false;
@@ -282,7 +282,7 @@ function startSim(wasm) {
   state.startedAt = Date.now();
   state.paused = false;
   const sab = makeInput();
-  const worker = new Worker(new URL('./sim-worker.js', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-24e', import.meta.url), { type: 'module' });
   const s = { worker, sab };
   sim = s;
   let buf = '', batch = [], flushT = null;
@@ -529,7 +529,7 @@ window.SV = {
   },
   // progetto nuovo dal modello Nucleo-F401RE (modello/nucleo-f401re.json)
   async newProject(nome) {
-    const m = await (await fetch('modello/nucleo-f401re.json')).json();
+    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-24e')).json();
     nome = await freeName(nome);
     const enc = new TextEncoder(), files = {};
     for (const [k, v] of Object.entries(m.files)) {
@@ -640,7 +640,7 @@ if (ANTEPRIMA) await preparaAnteprima();
 else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
-  const { accedi } = await import('./auth.js');
+  const { accedi } = await import('./auth.js?v=2026-11-24e');
   account = await accedi(remote);
   user = 'account:' + account.id;
   shown = account.username;
@@ -655,11 +655,12 @@ else if (ACCOUNT) {
   }));
 }
 const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
-for (const s of ['devices.js', 'app.js', 'analizzatore.js', 'web-ui.js']) await loadScript(s);
-await import('./editor.js');
-await import('./condividi.js');
-await import('./breadboard.js');
-await import('./segnala.js');
+for (const s of ['devices.js?v=2026-11-24e', 'app.js?v=2026-11-24e', 'analizzatore.js?v=2026-11-24e', 'web-ui.js?v=2026-11-24e']) await loadScript(s);
+await import('./editor.js?v=2026-11-24e');
+await import('./condividi.js?v=2026-11-24e');
+await import('./breadboard.js?v=2026-11-24e');
+await import('./segnala.js?v=2026-11-24e');
+await import('./layout.js?v=2026-11-24e');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (ANTEPRIMA || salvato) {
   await loadProjects();

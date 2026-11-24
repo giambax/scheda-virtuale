@@ -16,6 +16,9 @@
 //         insert({name, files, devices}) → {id, version}   (errore .code 'nome' se il nome c'è già)
 //         update(id, base, {name, files, devices}) → {version} | null se online è cambiato (conflitto)
 //         remove(id)
+//   segnalazioni (supabase/migrazione-3-segnalazioni.sql): invia(s) → {id} · mie() · admin() → bool
+//         tutte({stato}) · dettaglio(id) · aggiorna(id, {stato, risposta}) · nomi(ids) → [{id, username}]
+//         errore .code 'assente' se la migrazione non è ancora stata applicata (tabella o funzione mancante)
 // Errori (.code): 'rete' (offline: il sito resta sulla copia locale e riprova dopo), 'sessione'
 // (scaduta: bisogna rientrare), 'limite' (troppi progetti o MB: si salta solo quel progetto),
 // 'nome', 'auth', 'dati', 'errore'.
@@ -36,6 +39,25 @@ export function suggestUsername(user) {
   return '';
 }
 
+// testi della segnalazione: limiti uguali a quelli del database (migrazione-3-segnalazioni.sql)
+export const SEGN = { titolo: [3, 120], descrizione: [10, 5000], passi: [0, 3000], atteso: [0, 2000], browser: [0, 300], versione: [0, 40], registro: [0, 20000], progetto: 1048576 };
+export const SEGN_STATI = ['aperta', 'in corso', 'risolta', 'chiusa'];
+const SEGN_ASSENTE = 'Le segnalazioni non sono ancora attive su questo sito (manca un aggiornamento del database). Il testo resta qui: riprova più tardi.';
+// controlla e ripulisce una segnalazione prima di mandarla (il database ricontrolla tutto)
+export function segnalazionePulita(s) {
+  const out = {};
+  for (const k of ['titolo', 'descrizione', 'passi', 'atteso', 'browser', 'versione', 'registro']) {
+    const v = String((s && s[k]) ?? '').replace(/\r\n?/g, '\n').trim();
+    const [min, max] = SEGN[k];
+    if (v.length < min) throw new RemoteError(k === 'titolo' ? 'Il titolo è troppo corto (almeno 3 caratteri).' : 'La descrizione è troppo corta (almeno 10 caratteri).', 'dati');
+    out[k] = v.slice(0, max);
+  }
+  out.progetto = s && s.progetto && typeof s.progetto === 'object' ? s.progetto : null;
+  if (out.progetto && JSON.stringify(out.progetto).length > SEGN.progetto) throw new RemoteError('Il progetto è troppo grande per allegarlo (più di 1 MB): togli la spunta.', 'dati');
+  return out;
+}
+const SEGN_ELENCO = 'id,creata,aggiornata,titolo,stato,risposta,risposta_il';
+
 class RemoteError extends Error { constructor(msg, code) { super(msg); this.code = code; } }
 const isNet = e => (typeof navigator !== 'undefined' && !navigator.onLine) || /fetch|network|Failed to fetch|NetworkError|Load failed/i.test(String(e && (e.message || e)));
 const wrap = e => {
@@ -43,6 +65,7 @@ const wrap = e => {
   const m = (e && e.message) || String(e);
   if (isNet(e)) return new RemoteError('Sei offline: lavoro sulla copia nel browser.', 'rete');
   if (/^limite:/.test(m)) return new RemoteError(m.replace(/^limite:\s*/, ''), 'limite');
+  if (['PGRST205', 'PGRST202', '42P01', '42883'].includes(e && e.code) || /schema cache/i.test(m)) return new RemoteError(SEGN_ASSENTE, 'assente');
   if (/JWT|row-level security|permission denied/i.test(m)) return new RemoteError('Sessione scaduta: rientra nel tuo account.', 'sessione');
   return new RemoteError(m, 'errore');
 };
@@ -322,6 +345,25 @@ export async function supabaseRemote(cfg, createClient = null, go = null) {
       return rows.length ? rows[0] : null;
     },
     remove: id => data(() => sb.from('projects').delete().eq('id', id)),
+
+    segnalazioni: {
+      invia: async s => { const x = segnalazionePulita(s); return data(() => sb.from('segnalazioni').insert(x).select('id').single()); },
+      async mie() {
+        await need();
+        const { data: d } = await sb.auth.getSession();
+        return data(() => sb.from('segnalazioni').select(SEGN_ELENCO).eq('autore', d.session.user.id).order('creata', { ascending: false }).limit(50));
+      },
+      async admin() {
+        try { return (await data(() => sb.rpc('is_admin'))) === true; } catch (e) { if (e.code === 'assente') return false; throw e; }
+      },
+      tutte: ({ stato } = {}) => data(() => { let q = sb.from('segnalazioni').select(SEGN_ELENCO + ',autore,versione').order('creata', { ascending: false }).limit(500); if (stato) q = q.eq('stato', stato); return q; }),
+      dettaglio: id => data(() => sb.from('segnalazioni').select('*').eq('id', id).maybeSingle()),
+      aggiorna: async (id, { stato, risposta }) => {
+        if (!SEGN_STATI.includes(stato)) throw new RemoteError('Stato non valido.', 'dati');
+        return data(() => sb.from('segnalazioni').update({ stato, risposta: String(risposta || '').slice(0, 5000) }).eq('id', id).select(SEGN_ELENCO).single());
+      },
+      nomi: ids => data(() => sb.rpc('nomi_utenti', { ids })),
+    },
   };
 }
 
@@ -459,5 +501,40 @@ export function fintoRemote(cfg = {}, go = null) {
       return { version: r.version };
     },
     async remove(pid) { const db = load(); const id = me(db); db.projects = db.projects.filter(x => !(x.id === pid && x.owner === id)); save(db); },
+
+    // segnalazioni finte: stesse regole della migrazione 3; amministratori = db.admins (ID);
+    // window.SV_FINTO_NO_SEGNALAZIONI = true simula la migrazione non ancora applicata
+    segnalazioni: (() => {
+      const pronta = db => { if (window.SV_FINTO_NO_SEGNALAZIONI) throw new RemoteError(SEGN_ASSENTE, 'assente'); db.segnalazioni = db.segnalazioni || []; db.admins = db.admins || []; return me(db); };
+      const elenco = r => ({ id: r.id, creata: r.creata, aggiornata: r.aggiornata, titolo: r.titolo, stato: r.stato, risposta: r.risposta, risposta_il: r.risposta_il });
+      const admin = (db, id) => (db.admins || []).includes(id);
+      return {
+        async invia(s) {
+          const x = segnalazionePulita(s), db = load(), id = pronta(db), now = Date.now();
+          const mie = db.segnalazioni.filter(r => r.autore === id);
+          if (mie.filter(r => now - Date.parse(r.creata) < 86400000).length >= 20) throw new RemoteError('al massimo 20 segnalazioni al giorno', 'limite');
+          if (mie.length >= 200) throw new RemoteError('al massimo 200 segnalazioni per account', 'limite');
+          if (mie.some(r => now - Date.parse(r.creata) < 30000)) throw new RemoteError('aspetta 30 secondi tra una segnalazione e l\'altra', 'limite');
+          const r = { ...x, id: (db.segnalazioni.reduce((m, r) => Math.max(m, r.id), 0) + 1), autore: id, creata: new Date(now).toISOString(), aggiornata: new Date(now).toISOString(), stato: 'aperta', risposta: '', risposta_il: null };
+          db.segnalazioni.push(r); save(db);
+          return { id: r.id };
+        },
+        async mie() { const db = load(), id = pronta(db); return db.segnalazioni.filter(r => r.autore === id).map(elenco).reverse(); },
+        async admin() { try { const db = load(), id = pronta(db); return admin(db, id); } catch (e) { if (e.code === 'assente') return false; throw e; } },
+        async tutte({ stato } = {}) { const db = load(), id = pronta(db); return db.segnalazioni.filter(r => (admin(db, id) || r.autore === id) && (!stato || r.stato === stato)).map(r => ({ ...elenco(r), autore: r.autore, versione: r.versione })).reverse(); },
+        async dettaglio(sid) { const db = load(), id = pronta(db); const r = db.segnalazioni.find(r => r.id === sid && (admin(db, id) || r.autore === id)); return r ? { ...r } : null; },
+        async aggiorna(sid, { stato, risposta }) {
+          if (!SEGN_STATI.includes(stato)) throw new RemoteError('Stato non valido.', 'dati');
+          const db = load(), id = pronta(db);
+          if (!admin(db, id)) throw new RemoteError('Sessione scaduta: rientra nel tuo account.', 'sessione');
+          const r = db.segnalazioni.find(r => r.id === sid);
+          risposta = String(risposta || '').slice(0, 5000);
+          if (risposta !== r.risposta) r.risposta_il = risposta ? new Date().toISOString() : null;
+          Object.assign(r, { stato, risposta, aggiornata: new Date().toISOString() }); save(db);
+          return elenco(r);
+        },
+        async nomi(ids) { const db = load(), id = pronta(db); return admin(db, id) ? db.users.filter(u => ids.includes(u.id)).map(u => ({ id: u.id, username: u.username })) : []; },
+      };
+    })(),
   };
 }

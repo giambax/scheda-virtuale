@@ -72,7 +72,7 @@ async function userPut(rec) {
 // (più progetti), uno zip fatto su Windows (\ nei nomi) o un progetto "sciolto" con
 // solo i .c/.h e il .ioc. Header CMSIS/HAL e Debug/ non si tengono: li dà il sito.
 const SKIP_DIR = /(^|\/)(Drivers|Middlewares|Debug|Release|__MACOSX|\.settings|\.metadata)\//;
-const USEFUL = f => /\.(c|h)$/.test(f) || /(^|\/)[^/]+\.ioc$/.test(f) || /(^|\/)\.cproject$/.test(f) || /(^|\/)\.(scheda-virtuale|esercizio)\.json$/.test(f);
+const USEFUL = f => /\.(c|h)$/.test(f) || /(^|\/)[^/]+\.ioc$/.test(f) || /(^|\/)\.cproject$/.test(f) || /(^|\/)\.(scheda-virtuale|esercizio|breadboard)\.json$/.test(f);
 const base = f => f.split('/').pop();
 
 export function findProjects(input, fallback = 'progetto') {
@@ -659,6 +659,7 @@ for (const s of ['devices.js', 'app.js', 'analizzatore.js', 'web-ui.js']) await 
 await import('./editor.js');
 await import('./condividi.js');
 await import('./breadboard.js');
+await import('./segnala.js');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (ANTEPRIMA || salvato) {
   await loadProjects();

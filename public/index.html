@@ -53,6 +53,8 @@ if ('serviceWorker' in navigator) {
     <label class="switch" hidden id="safari-sw" title="Quando lanci o compili da CubeIDE, Safari passa in primo piano sul simulatore">
       <input type="checkbox" id="safari" checked><span class="slider"></span><span id="safari-txt">Apri in Safari</span>
     </label>
+    <button id="btn-segn-admin" class="ghost" hidden title="Segnalazioni arrivate (solo amministratore)">📋 Segnalazioni</button>
+    <button id="btn-bug" class="ghost" title="Qualcosa non va? Mandaci una segnalazione">🐞 Segnala</button>
     <button id="btn-help" class="ghost" title="Come si usa">?</button>
   </div>
 </header>
@@ -205,6 +207,39 @@ if ('serviceWorker' in navigator) {
     <p class="muted small">Limiti del prototipo: gli interrupt partono nei punti in cui il programma consuma tempo (cicli while/for, HAL_Delay, HAL_GetTick), non a metà di un'istruzione; niente debug passo passo e niente scheda Variabili per ora. Micro supportati: STM32F401 e STM32F411 (header HAL STM32Cube F4 V1.28.3).</p>
     <div class="right"><button class="primary">Ho capito</button></div>
   </form>
+</dialog>
+
+<dialog id="segnala" class="segnala">
+  <div class="segn-head"><h2>Segnala un bug</h2><button id="segn-chiudi" class="ghost small" type="button" title="Chiudi">✕</button></div>
+  <div id="segn-senza" hidden>
+    <p>Per mandare una segnalazione serve un account: in questa versione del sito non ci sono gli account.</p>
+    <div class="right"><button id="segn-chiudi2" type="button" class="primary">Chiudi</button></div>
+  </div>
+  <form id="segn-form">
+    <label>Titolo <span class="muted small" data-conta="titolo"></span><input id="segn-titolo" type="text" required placeholder="Es. il display resta spento dopo Reset"></label>
+    <label>Cosa succede <span class="muted small" data-conta="descrizione"></span><textarea id="segn-descrizione" rows="4" required></textarea></label>
+    <label>Passi per riprodurlo <span class="muted small">(facoltativo)</span> <span class="muted small" data-conta="passi"></span><textarea id="segn-passi" rows="3" placeholder="1. Apro… 2. Premo… 3. …"></textarea></label>
+    <label>Cosa ti aspettavi <span class="muted small">(facoltativo)</span> <span class="muted small" data-conta="atteso"></span><textarea id="segn-atteso" rows="2"></textarea></label>
+    <fieldset class="segn-all"><legend class="small">Allega (facoltativo)</legend>
+      <label class="small"><input type="checkbox" id="segn-prog"> il progetto aperto <span id="segn-prog-nome" class="muted"></span> (file, dispositivi, breadboard)</label>
+      <label class="small"><input type="checkbox" id="segn-reg" checked> le ultime righe del Registro</label>
+      <label class="small"><input type="checkbox" id="segn-br" checked> browser e versione del sito</label>
+    </fieldset>
+    <div id="segn-msg" class="segn-msg small" hidden></div>
+    <div class="right"><span class="muted small">Al massimo 20 al giorno. Le legge solo chi gestisce il sito.</span> <button id="segn-invia" type="submit" class="primary">Invia</button></div>
+    <h3>Le mie segnalazioni</h3>
+    <div id="segn-mie" class="segn-mie"></div>
+  </form>
+</dialog>
+
+<dialog id="segn-admin" class="segn-admin">
+  <div class="segn-head"><h2>Segnalazioni</h2><span id="sa-conta" class="muted small"></span><button id="sa-chiudi" class="ghost small" type="button" title="Chiudi">✕</button></div>
+  <div class="sa-filtri">
+    <select id="sa-stato"><option value="">tutte</option><option>aperta</option><option>in corso</option><option>risolta</option><option>chiusa</option></select>
+    <input id="sa-cerca" type="search" placeholder="Cerca titolo, utente o numero…">
+    <button id="sa-aggiorna" type="button" class="ghost small">↻</button>
+  </div>
+  <div class="sa-corpo"><div id="sa-lista" class="sa-lista"></div><div id="sa-dett" class="sa-dett"></div></div>
 </dialog>
 
 <dialog id="scegli">

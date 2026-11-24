@@ -11,7 +11,7 @@ export const SUPABASE_KEY = 'sb_publishable_N0YRBBpQxzPN98CGEH3rCw_l_Zc5u26';
 export const SITE_URL = 'https://giambax.github.io/scheda-virtuale/';
 // accesso con Google / GitHub (GUIDA-LOGIN-SOCIAL.md): metti qui solo quelli già attivati nel
 // pannello Supabase, es. ['google', 'github']. Vuota = nessun pulsante (solo nome utente/email e password).
-export const PROVIDER_ATTIVI = [];
+export const PROVIDER_ATTIVI = ['github'];
 // solo per le prove: 'finto' = account e progetti online simulati nel browser (nessuna rete)
 export const BACKEND = '';
 

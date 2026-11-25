@@ -31,9 +31,12 @@ setTimeout(() => { if ((typeof S === 'undefined' || !S.selId) && !card && ls.get
 // ------------------------------------------------------------------
 // Pannello in basso
 const MIN = 120;
+// telefono: il pannello è un foglio dal basso che si ferma chiuso, a metà o a tutta altezza (mobile.css)
+const TEL = matchMedia('(max-width: 760px), (max-height: 520px)');
+const spazio = () => window.innerHeight - (parseFloat(root.style.getPropertyValue('--top-h')) || 54);
 const pannelloH = () => parseInt(getComputedStyle(root).getPropertyValue('--pannello-h')) || 300;
 function impostaH(h) {
-  h = Math.max(MIN, Math.min(Math.round(window.innerHeight * 0.8), Math.round(h)));
+  h = Math.max(TEL.matches ? 60 : MIN, Math.min(Math.round(TEL.matches ? spazio() : window.innerHeight * 0.8), Math.round(h)));
   root.style.setProperty('--pannello-h', h + 'px');
   ls.set('sv-pannello-h', String(h));
 }
@@ -52,20 +55,38 @@ export function pannelloChiuso(v) {
     e.preventDefault();
     try { man.setPointerCapture(e.pointerId); } catch {}
     man.classList.add('attiva');
-    if (document.body.classList.contains('pannello-chiuso')) { pannelloChiuso(false); impostaH(MIN); }
+    if (document.body.classList.contains('pannello-chiuso')) { pannelloChiuso(false); impostaH(TEL.matches ? 60 : MIN); }   // sul telefono parte dalla linguetta
     const y0 = e.clientY, h0 = pannelloH();
     const muovi = ev => impostaH(h0 + (y0 - ev.clientY));
-    const fine = () => { man.classList.remove('attiva'); man.removeEventListener('pointermove', muovi); window.dispatchEvent(new Event('resize')); };
+    const fine = ev => {
+      man.classList.remove('attiva'); man.removeEventListener('pointermove', muovi);
+      if (TEL.matches) {   // si ferma alla posizione più vicina (un tocco senza trascinare: chiuso ↔ metà)
+        const h = pannelloH(), mosso = Math.abs((ev.clientY ?? y0) - y0) > 6;
+        if (!mosso) foglio(h0 > MIN + 10 && !document.body.classList.contains('pannello-chiuso') ? 'chiuso' : 'meta');
+        else foglio(h < spazio() * 0.25 ? 'chiuso' : h < spazio() * 0.75 ? 'meta' : 'intero');
+      }
+      window.dispatchEvent(new Event('resize'));
+    };
     man.addEventListener('pointermove', muovi);
     man.addEventListener('pointerup', fine, { once: true });
     man.addEventListener('pointercancel', fine, { once: true });
   });
-  man.addEventListener('dblclick', () => pannelloChiuso(!document.body.classList.contains('pannello-chiuso')));
+  man.addEventListener('dblclick', () => { if (!TEL.matches) pannelloChiuso(!document.body.classList.contains('pannello-chiuso')); });
   document.getElementById('pannello-su').addEventListener('click', () => pannelloChiuso(!document.body.classList.contains('pannello-chiuso')));
-  // una scheda cliccata con il pannello chiuso lo riapre
-  document.querySelectorAll('#pannello .tab').forEach(t => t.addEventListener('click', () => { if (document.body.classList.contains('pannello-chiuso')) pannelloChiuso(false); }));
+  // una scheda cliccata con il pannello chiuso lo riapre (sul telefono a metà schermo)
+  document.querySelectorAll('#pannello .tab').forEach(t => t.addEventListener('click', () => { if (document.body.classList.contains('pannello-chiuso')) { if (TEL.matches) foglio('meta'); else pannelloChiuso(false); } }));
+  // sul telefono si parte con il foglio chiuso: il banco si vede tutto
+  if (TEL.matches && ls.get('sv-foglio') !== 'aperto') pannelloChiuso(true);
   // scheda salvata che non c'è più (es. "breadboard", ora al centro)
   if (!document.querySelector('#pannello .tab.active:not([hidden])')) showTab('code');
+}
+
+// foglio del telefono: 'chiuso' | 'meta' | 'intero'
+export function foglio(stato) {
+  if (stato === 'chiuso') { pannelloChiuso(true); ls.set('sv-foglio', ''); return; }
+  root.style.setProperty('--pannello-h', Math.round(stato === 'intero' ? spazio() : spazio() * 0.5) + 'px');
+  ls.set('sv-foglio', 'aperto');
+  pannelloChiuso(false);
 }
 
 // ------------------------------------------------------------------
@@ -88,11 +109,22 @@ const PASSI = [
   { el: '#btn-run', t: '4. Avvia', p: 'Compila e fa partire la scheda virtuale: LED e display della breadboard si accendono con le correnti vere, i pulsanti si premono con il mouse.' },
   { el: '#pannello .tab[data-tab="scope"]', t: '5. Guarda i segnali', p: 'Nella scheda Segnali c\'è l\'analizzatore logico dei pin; in Registro gli avvisi del laboratorio (corti, LED senza resistenza, pin oltre 25 mA).' },
 ];
+// col dito (telefono, tablet) gli stessi passi spiegati per il tocco
+const PASSI_TOCCO = [
+  { el: '#btn-componente', elTablet: '#palette', t: '1. Metti un componente', p: 'Tocca ＋ Componente (sul tablet la colonna a sinistra), scegli un componente e tocca la breadboard dove posarlo. ↻ nella barretta in basso lo ruota prima di posarlo.' },
+  { el: '#bb-svg', t: '2. Fai un filo, muovi la vista', p: 'Tocca un foro o un pin della Nucleo, poi tocca l\'arrivo: il filo si fa da solo. Due dita: pizzica per lo zoom e trascina per spostarti. Tieni premuto un componente per ruotarlo, copiarlo o eliminarlo.' },
+  { el: '#btn-cassetto', t: '3. Carica il codice', p: 'Nel menu ☰ apri o crea un progetto (🗜 Zip del progetto CubeIDE, oppure ＋ Nuovo). Il codice è nella linguetta Codice in basso: trascinala in su.' },
+  { el: '#btn-run', t: '4. Avvia', p: 'Compila e fa partire la scheda virtuale: LED e display della breadboard si accendono, i pulsanti si tengono premuti col dito. Reset, Debug e velocità sono nel menu ⋯.' },
+  { el: '#pannello .tab[data-tab="scope"]', t: '5. Guarda i segnali', p: 'Nel foglio in basso: Segnali (analizzatore logico), Seriale, Registro con gli avvisi del laboratorio, Pin.' },
+];
+const passi = () => document.body.classList.contains('tocco') || matchMedia('(pointer: coarse)').matches ? PASSI_TOCCO : PASSI;
 let luce = null, card = null, passo = 0;
 function chiudiTour() { luce?.remove(); card?.remove(); luce = card = null; ls.set('sv-tour', 'fatto'); if (typeof S === 'undefined' || !S.selId) cassettoAperto(true); }
 function mostra(i) {
   passo = i;
-  const s = PASSI[i], t = document.querySelector(s.el);
+  const P_ = passi(), s = P_[i];
+  let t = document.querySelector(s.el);
+  if ((!t || !t.offsetParent) && s.elTablet) t = document.querySelector(s.elTablet);
   if (!luce) { luce = document.createElement('div'); luce.className = 'tour-luce'; document.body.append(luce); }
   if (!card) { card = document.createElement('div'); card.className = 'tour-card'; card.setAttribute('role', 'dialog'); document.body.append(card); }
   const r = t ? t.getBoundingClientRect() : { left: innerWidth / 2 - 40, top: innerHeight / 2 - 40, width: 80, height: 80 };
@@ -101,11 +133,11 @@ function mostra(i) {
   const h = document.createElement('h3'); h.textContent = s.t;
   const p = document.createElement('p'); p.textContent = s.p;
   const bar = document.createElement('div'); bar.className = 'right';
-  const n = document.createElement('span'); n.className = 'passo muted small'; n.textContent = `${i + 1} di ${PASSI.length}`;
+  const n = document.createElement('span'); n.className = 'passo muted small'; n.textContent = `${i + 1} di ${P_.length}`;
   const b = (txt, cls, fn) => { const x = document.createElement('button'); x.type = 'button'; x.className = cls; x.textContent = txt; x.addEventListener('click', fn); return x; };
   bar.append(n, b('Salta', 'ghost small', chiudiTour));
   if (i > 0) bar.append(b('Indietro', 'small', () => mostra(i - 1)));
-  bar.append(b(i < PASSI.length - 1 ? 'Avanti' : 'Fine', 'primary small', () => i < PASSI.length - 1 ? mostra(i + 1) : chiudiTour()));
+  bar.append(b(i < P_.length - 1 ? 'Avanti' : 'Fine', 'primary small', () => i < P_.length - 1 ? mostra(i + 1) : chiudiTour()));
   card.append(h, p, bar);
   // la scheda accanto all'elemento, dentro lo schermo
   const cw = card.offsetWidth, ch = card.offsetHeight;
@@ -149,5 +181,5 @@ document.addEventListener('keydown', e => {
   if (k === 'v' && !e.repeat) { e.preventDefault(); vista(VISTE[(VISTE.indexOf(document.body.dataset.vista) + 1) % VISTE.length]); }
 });
 
-window.SVlayout = { tour, cassettoAperto, pannelloChiuso, impostaH, vista };
+window.SVlayout = { tour, cassettoAperto, pannelloChiuso, impostaH, vista, foglio };
 if (ls.get('sv-tour') !== 'fatto' && !document.body.classList.contains('anteprima')) setTimeout(tour, 1200);

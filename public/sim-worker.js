@@ -1,6 +1,6 @@
 // sim-worker.js — esegue la scheda compilata. Il worker resta dentro il WebAssembly
 // finché la scheda gira (Stop = la pagina chiude il worker); gli eventi escono a pacchetti.
-import { runSim, trapMessage } from './sim-runtime.js?v=2026-11-25e';
+import { runSim, trapMessage } from './sim-runtime.js?v=2026-11-25g';
 
 onmessage = ev => {
   const { wasm, sab } = ev.data;

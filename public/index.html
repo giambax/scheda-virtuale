@@ -2,15 +2,16 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Scheda Virtuale STM32</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='6' width='20' height='20' rx='2' fill='%23222' transform='rotate(45 16 16)'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%233ddc84'/%3E%3C/svg%3E">
 <script>try { document.documentElement.dataset.theme = localStorage.getItem('sv-tema') || 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }</script>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#151920">
 <link rel="apple-touch-icon" href="icone/icona-180.png">
-<link rel="stylesheet" href="style.css?v=2026-11-25e">
-<link rel="stylesheet" href="web.css?v=2026-11-25e">
+<link rel="stylesheet" href="style.css?v=2026-11-25g">
+<link rel="stylesheet" href="web.css?v=2026-11-25g">
+<link rel="stylesheet" href="mobile.css?v=2026-11-25g">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -67,6 +68,7 @@ if ('serviceWorker' in navigator) {
     <button id="btn-segn-admin" class="ghost" hidden title="Segnalazioni arrivate (solo amministratore)">📋 Segnalazioni</button>
     <button id="btn-bug" class="ghost" title="Qualcosa non va? Mandaci una segnalazione">🐞 Segnala</button>
     <button id="btn-help" class="ghost" title="Come si usa">?</button>
+    <button id="btn-altro" class="ghost icona" type="button" title="Altri comandi" aria-haspopup="menu" aria-expanded="false">⋯</button>
   </div>
 </header>
 
@@ -373,6 +375,6 @@ if ('serviceWorker' in navigator) {
   </form>
 </dialog>
 
-<script type="module" src="local-server.js?v=2026-11-25e"></script>
+<script type="module" src="local-server.js?v=2026-11-25g"></script>
 </body>
 </html>

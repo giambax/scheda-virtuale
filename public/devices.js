@@ -272,6 +272,29 @@ function devWireBody(el, d, i) {
     for (const [a, dir, n, f] of [['ccw', -1, 1, false], ['cw', 1, 1, false], ['ccw5', -1, 5, true], ['cw5', 1, 5, true]]) q(`[data-act="${a}"]`).addEventListener('click', () => encTurn(d, dir, n, f));
     const knob = q('[data-act="knob"]');
     knob.addEventListener('wheel', e => { e.preventDefault(); encTurn(d, e.deltaY > 0 ? 1 : -1); }, { passive: false });
+    // col dito: trascinando in tondo gira (uno scatto ogni 24°); un tocco senza girare preme SW
+    let giro = null;
+    knob.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      try { knob.setPointerCapture(e.pointerId); } catch {}
+      const r = knob.getBoundingClientRect();
+      giro = { c: [r.left + r.width / 2, r.top + r.height / 2], a: null, acc: 0, girato: false };
+    });
+    knob.addEventListener('pointermove', e => {
+      if (!giro || e.pointerType !== 'touch') return;
+      const a = Math.atan2(e.clientY - giro.c[1], e.clientX - giro.c[0]) * 180 / Math.PI;
+      if (giro.a !== null) { let da = a - giro.a; if (da > 180) da -= 360; if (da < -180) da += 360; giro.acc += da; }
+      giro.a = a;
+      while (Math.abs(giro.acc) >= 24) { const dir = Math.sign(giro.acc); encTurn(d, dir); giro.acc -= dir * 24; giro.girato = true; }
+    });
+    const fineGiro = e => {
+      if (!giro || e.pointerType !== 'touch') return;
+      if (!giro.girato && d.pins.sw && e.type === 'pointerup') { pressFor(d.pins.sw, 0, -1); pressFor(d.pins.sw, null, -1); }
+      giro = null;
+    };
+    knob.addEventListener('pointerup', fineGiro);
+    knob.addEventListener('pointercancel', fineGiro);
     if (d.pins.sw) holdDown(knob, () => pressFor(d.pins.sw, 0, -1), () => pressFor(d.pins.sw, null, -1));
   }
   if (d.type === 'pot') {

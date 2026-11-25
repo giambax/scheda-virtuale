@@ -13,5 +13,9 @@
     { "src": "icone/icona-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "icone/icona-maschera-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icone/icona.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "screenshots": [
+    { "src": "icone/schermata-larga.png", "sizes": "1280x800", "type": "image/png", "form_factor": "wide", "label": "Banco di lavoro: breadboard, Nucleo e pannello del codice" },
+    { "src": "icone/schermata-telefono.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow", "label": "Sul telefono: il cronometro sulla breadboard" }
   ]
 }

@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-25e';
+import * as K from './circuito.js?v=2026-11-25g';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -1082,28 +1082,64 @@ function controllaAggancio(comps) {
   return avvisi;
 }
 
+// clic (o tocco) mentre si posa un componente o si fa un filo
+function comando(g, alt) {
+  if (B.posa) { const tipo = B.posa, rot = B.posaRot || 0; annullaComando(); aggiungi(tipo, g[0], g[1], rot); return true; }
+  if (B.filo) {
+    const inizio = B.filo.pts[0];
+    if (terminale(g) && !alt && (g[0] !== inizio[0] || g[1] !== inizio[1])) finisciFilo(g);
+    else if (g[0] !== B.filo.pts[B.filo.pts.length - 1][0] || g[1] !== B.filo.pts[B.filo.pts.length - 1][1]) { B.filo.pts = percorso([...B.filo.pts, g]); disegnaFiloInCorso(); }
+    return true;
+  }
+  return false;
+}
 function wire() {
   const svg = $('#bb-svg');
   B.modo = 'sel';
   svg.addEventListener('contextmenu', e => { if (B.filo || B.posa) { e.preventDefault(); annullaComando(); } });
+  // Tocco (telefono, tablet): due dita = zoom e sposta la vista, un dito sul vuoto = sposta la vista,
+  // pressione lunga su un componente = menu (tocco.js). Posare un componente e continuare un filo avvengono
+  // quando il dito si alza senza essersi mosso: così un pizzico non posa niente per sbaglio.
+  const dita = new Map();
+  let lungo = 0;
+  const pinza = () => { const [a, b] = [...dita.values()]; return { c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1 }; };
+  const lasciaDrag = () => {   // il primo dito aveva cominciato qualcosa: si annulla
+    const d = B.drag;
+    clearTimeout(lungo);
+    if (!d) return;
+    if (d.kind === 'press') premi(d.id, false);
+    else if (d.kind === 'filoGiu' && B.filo && B.filo.pts.length === 1) annullaComando();
+    else if ((d.kind === 'comp' || d.kind === 'wire') && d.mosso) { B.bb = K.pulisciBreadboard(JSON.parse(d.prima)); disegnaComponenti(); }
+    if (d.kind === 'rett') $('#bb-ghost').innerHTML = '';
+    B.drag = null;
+  };
   svg.addEventListener('pointerdown', ev => {
     if (ev.button === 2) return;
     const m = mondo(ev), g = griglia(m), hit = colpito(ev);
     try { svg.setPointerCapture(ev.pointerId); } catch {}
+    const tocco = ev.pointerType === 'touch';
+    if (tocco) {
+      document.body.classList.add('tocco');
+      dita.set(ev.pointerId, [ev.clientX, ev.clientY]);
+      if (dita.size > 2) return;
+      if (dita.size === 2) { lasciaDrag(); B.drag = { kind: 'pinza', ...pinza(), v: { ...B.vista } }; return; }
+      if (B.posa || B.filo) { B.drag = { kind: 'tap', xy: [ev.clientX, ev.clientY], g, alt: false }; return; }
+      if (hit.act === 'enc' || hit.act === 'pot') {   // manopole: si girano trascinando in tondo
+        const r = ev.target.closest('[data-act]').getBoundingClientRect();
+        B.drag = { kind: 'gira', act: hit.act, id: hit.id, c: [r.left + r.width / 2, r.top + r.height / 2], a: null, acc: 0, girato: false };
+        return;
+      }
+    }
     // sposta la vista: rotella premuta o Maiuscolo+trascina
     if (ev.button === 1 || (ev.shiftKey && !B.filo)) { ev.preventDefault(); svg.classList.add('pan'); B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } }; return; }
-    if (B.posa) { const tipo = B.posa, rot = B.posaRot || 0; annullaComando(); aggiungi(tipo, g[0], g[1], rot); return; }
     if (B.drag && B.drag.kind === 'muovi') { finisciMuovi(); return; }
-    if (B.filo) {
-      const inizio = B.filo.pts[0];
-      if (terminale(g) && !ev.altKey && (g[0] !== inizio[0] || g[1] !== inizio[1])) finisciFilo(g);
-      else if (g[0] !== B.filo.pts[B.filo.pts.length - 1][0] || g[1] !== B.filo.pts[B.filo.pts.length - 1][1]) { B.filo.pts = percorso([...B.filo.pts, g]); disegnaFiloInCorso(); }
-      return;
-    }
+    if (comando(g, ev.altKey)) return;
     if (hit.act === 'press') { premi(hit.id, true); B.drag = { kind: 'press', id: hit.id }; return; }
     if (hit.act === 'enc') { const e = B.enc[hit.id] || [0, 0, 0]; B.enc[hit.id] = [e[0], e[1], 1]; aggiornaIngressi(); B.drag = { kind: 'encsw', id: hit.id }; return; }
     const vicinoAlForo = Math.hypot(m[0] - g[0], m[1] - g[1]) < 0.42;
-    const suUnPiedino = vicinoAlForo && suPiedino(g) && !hit.act;
+    // col dito sul disegno di un componente vince il componente (selezione, pressione lunga): il filo parte
+    // dal foro accanto o con lo strumento Filo
+    const suUnPiedino = vicinoAlForo && suPiedino(g) && !hit.act && !(tocco && hit.comp);
     // in modalità filo, su un foro libero o sul piedino di un componente: parte un filo (clic-clic, o trascinando)
     if (B.modo === 'filo' || suUnPiedino || (!hit.comp && !hit.wire && vicinoAlForo && terminale(g))) {
       if (B.modo === 'filo' && !terminale(g)) { messaggioStato('Un filo parte da un foro o da un pin'); return; }
@@ -1116,7 +1152,8 @@ function wire() {
       if (!ev.ctrlKey && !ev.metaKey && !B.sel.has(hit.comp)) B.sel = new Set();
       if ((ev.ctrlKey || ev.metaKey) && B.sel.has(hit.comp)) B.sel.delete(hit.comp); else B.sel.add(hit.comp);
       disegnaSelezione();
-      B.drag = { kind: 'comp', start: g, prima: JSON.stringify(B.bb), mosso: false };
+      B.drag = { kind: 'comp', start: g, prima: JSON.stringify(B.bb), mosso: false, xy: tocco ? [ev.clientX, ev.clientY] : null };
+      if (tocco) { const id = hit.comp, xy = [ev.clientX, ev.clientY]; clearTimeout(lungo); lungo = setTimeout(() => { if (B.drag && B.drag.kind === 'comp' && !B.drag.mosso && dita.size === 1) { B.drag = null; B.sel = new Set([id]); disegnaSelezione(); window.dispatchEvent(new CustomEvent('bb-menu', { detail: { id, x: xy[0], y: xy[1] } })); } }, 550); }
       return;
     }
     if (hit.wire) {
@@ -1126,11 +1163,38 @@ function wire() {
       B.drag = { kind: 'wire', id: w.id, prima: JSON.stringify(B.bb), mosso: false, ...puntoFilo(w, m), start: g };
       return;
     }
-    // sul vuoto: rettangolo di selezione
+    // sul vuoto: rettangolo di selezione (col dito: sposta la vista)
     if (!ev.ctrlKey && !ev.metaKey && B.sel.size) { B.sel.clear(); disegnaSelezione(); }
+    if (tocco) { B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } }; return; }
     B.drag = { kind: 'rett', da: m, a: m };
   });
   svg.addEventListener('pointermove', ev => {
+    if (ev.pointerType === 'touch' && dita.has(ev.pointerId)) {
+      dita.set(ev.pointerId, [ev.clientX, ev.clientY]);
+      const d = B.drag;
+      if (d && d.kind === 'pinza') {
+        if (dita.size < 2) return;
+        const p = pinza(), r = svg.getBoundingClientRect(), k0 = d.v.w / r.width;
+        const w = Math.min(MONDO.w * 2, Math.max(12, d.v.w * d.d / p.d)), k = w / r.width;
+        B.vista.w = w; B.vista.h = w * d.v.h / d.v.w;
+        B.vista.x = d.v.x + (d.c[0] - r.left) * k0 - (p.c[0] - r.left) * k;
+        B.vista.y = d.v.y + (d.c[1] - r.top) * k0 - (p.c[1] - r.top) * k;
+        applicaVista();
+        return;
+      }
+      if (d && d.kind === 'tap') { if (Math.hypot(ev.clientX - d.xy[0], ev.clientY - d.xy[1]) > 10) B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } }; return; }
+      if (d && d.kind === 'gira') {
+        const a = Math.atan2(ev.clientY - d.c[1], ev.clientX - d.c[0]) * 180 / Math.PI;
+        if (d.a !== null) { let da = a - d.a; if (da > 180) da -= 360; if (da < -180) da += 360; d.acc += da; }
+        d.a = a;
+        if (d.act === 'enc') while (Math.abs(d.acc) >= 24) { const dir = Math.sign(d.acc); scatto(d.id, dir); d.acc -= dir * 24; d.girato = true; }
+        else if (Math.abs(d.acc) >= 3) { const c = B.bb.comps.find(c => c.id === d.id); if (c) impostaPot(c, c.opt.pos + d.acc / 270); d.acc = 0; d.girato = true; }
+        return;
+      }
+      // un dito che trema non deve spostare il componente: si comincia oltre 8 px
+      if (d && d.kind === 'comp' && !d.mosso && d.xy && Math.hypot(ev.clientX - d.xy[0], ev.clientY - d.xy[1]) < 8) return;
+      if (d && d.kind === 'comp') clearTimeout(lungo);
+    }
     const m = mondo(ev), g = griglia(m);
     if (!B.hover || B.hover[0] !== g[0] || B.hover[1] !== g[1]) { B.hover = g; aggiornaStato(); }
     const d = B.drag;
@@ -1168,6 +1232,19 @@ function wire() {
     }
   });
   const fine = ev => {
+    if (ev.pointerType === 'touch') {
+      dita.delete(ev.pointerId);
+      clearTimeout(lungo);
+      const d = B.drag;
+      if (d && d.kind === 'pinza') { if (dita.size < 2) B.drag = null; return; }
+      if (dita.size) return;
+      if (d && d.kind === 'tap') { B.drag = null; B.hover = d.g; comando(d.g, false); return; }
+      if (d && d.kind === 'gira') {
+        B.drag = null;
+        if (!d.girato && d.act === 'enc') { const e = B.enc[d.id] || [0, 0, 0]; B.enc[d.id] = [e[0], e[1], 1]; aggiornaIngressi(); setTimeout(() => { const e2 = B.enc[d.id] || [0, 0, 0]; B.enc[d.id] = [e2[0], e2[1], 0]; aggiornaIngressi(); }, 150); }
+        return;
+      }
+    }
     const d = B.drag;
     svg.classList.remove('pan');
     if (!d || d.kind === 'muovi') return;
@@ -1194,7 +1271,7 @@ function wire() {
   };
   svg.addEventListener('pointerup', fine);
   svg.addEventListener('pointercancel', fine);
-  svg.addEventListener('pointerleave', () => { B.hover = null; aggiornaStato(); });
+  svg.addEventListener('pointerleave', ev => { if (ev.pointerType !== 'touch') { B.hover = null; aggiornaStato(); } });
   svg.addEventListener('dblclick', ev => {
     const hit = colpito(ev);
     if (hit.comp && !B.filo) { apriPannello(hit.comp); return; }
@@ -1398,8 +1475,10 @@ function palette() {
   });
   // clic: si posa con un clic sul banco; trascinare: si lascia sul banco
   box.querySelectorAll('.pal-voce').forEach(v => {
+    v.addEventListener('click', () => { if (v.dataset.dito) { delete v.dataset.dito; scegli(v.dataset.tipo); window.dispatchEvent(new CustomEvent('bb-scelto', { detail: v.dataset.tipo })); } });
     v.addEventListener('pointerdown', ev => {
       if (ev.button !== 0) return;
+      if (ev.pointerType === 'touch') { v.dataset.dito = '1'; return; }   // col dito: un tocco sceglie (click qui sopra), trascinare scorre la palette
       const t = v.dataset.tipo, x0 = ev.clientX, y0 = ev.clientY;
       let trascina = false;
       const muovi = e => {
@@ -1427,7 +1506,7 @@ function scegli(t) {
   B.posa = t; B.posaRot = 0; $('#bb-svg').classList.add('posa');
   document.querySelectorAll('.pal-voce').forEach(x => x.classList.toggle('on', x.dataset.tipo === t));
   sagomaPosa();
-  messaggioStato(`${K.TIPI[t].nome}: clicca sulla breadboard dove posarlo · R ruota · Esc annulla`);
+  messaggioStato(document.body.classList.contains('tocco') ? `${K.TIPI[t].nome}: tocca la breadboard dove posarlo · ↻ ruota · ✕ annulla` : `${K.TIPI[t].nome}: clicca sulla breadboard dove posarlo · R ruota · Esc annulla`);
 }
 // sagoma del componente da posare (con la rotazione scelta) e aggancio dei suoi piedini
 function sagomaPosa() {
@@ -1521,4 +1600,4 @@ function monta() {
 }
 monta();
 // per le prove (strumenti/prova-breadboard-browser.mjs) e per la console
-Object.assign(B, { apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });
+Object.assign(B, { elimina, copia, incolla, annulla, ripeti, adatta, zoom, scegli, sagomaPosa, duplica: () => { copia(); incolla(); }, togliAngolo: () => { if (!B.filo) return; if (B.filo.pts.length > 1) { B.filo.pts.pop(); disegnaFiloInCorso(); } else annullaComando(); }, apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });

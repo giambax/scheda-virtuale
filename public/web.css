@@ -122,3 +122,13 @@ dialog.segn-admin:not([open]) { display: none; }
 
 /* nuova versione (aggiorna.js) */
 .nuova-versione { position: fixed; z-index: 3000; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--accent); box-shadow: var(--shadow); font-size: 13px; }
+
+/* cartella collegata (cartella.js) */
+.cartella { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: -2px 0 8px; }
+.cartella .latch { margin-top: 2px; }
+
+/* link corto e QR (condividi.js) */
+.cond-corto { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.cond-qrbox .cond-qr { width: 180px; height: 180px; image-rendering: pixelated; border-radius: 6px; }
+.cond-mie { width: 100%; }
+.cond-riga { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 3px 0; border-bottom: 1px solid var(--border); }

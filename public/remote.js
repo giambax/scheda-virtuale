@@ -58,6 +58,25 @@ export function segnalazionePulita(s) {
 }
 const SEGN_ELENCO = 'id,creata,aggiornata,titolo,stato,risposta,risposta_il';
 
+// link corti (supabase/migrazione-4-condivisioni.sql): …/public/#c=<id> → il contenuto di un link lungo.
+// Si leggono anche senza accesso (funzione leggi_condivisione); null se non c'è, è revocato o la migrazione manca.
+export async function leggiCorto(cfg, id) {
+  if (!/^[A-Za-z0-9_-]{12}$/.test(id || '')) return null;
+  if (cfg.BACKEND === 'finto') {
+    let db = {}; try { db = JSON.parse(localStorage.getItem('sv-finto-db')) || {}; } catch {}
+    const c = (db.condivisioni || []).find(x => x.id === id && !x.revocata);
+    return c ? { tipo: c.tipo, dati: c.dati } : null;
+  }
+  if (!cfg.HA_ACCOUNT) return null;
+  try {
+    const r = await fetch(cfg.SUPABASE_URL + '/rest/v1/rpc/leggi_condivisione', { method: 'POST', headers: { apikey: cfg.SUPABASE_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_id: id }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return Array.isArray(j) && j[0] && /^(progetto|esercizio)$/.test(j[0].tipo) && /^[A-Za-z0-9_-]+$/.test(j[0].dati) ? { tipo: j[0].tipo, dati: j[0].dati } : null;
+  } catch { return null; }
+}
+const corta = c => ({ tipo: c.tipo === 'esercizio' ? 'esercizio' : 'progetto', dati: String(c.dati || ''), nome: String(c.nome || '').slice(0, 80) });
+
 class RemoteError extends Error { constructor(msg, code) { super(msg); this.code = code; } }
 const isNet = e => (typeof navigator !== 'undefined' && !navigator.onLine) || /fetch|network|Failed to fetch|NetworkError|Load failed/i.test(String(e && (e.message || e)));
 const wrap = e => {
@@ -364,6 +383,11 @@ export async function supabaseRemote(cfg, createClient = null, go = null) {
       },
       nomi: ids => data(() => sb.rpc('nomi_utenti', { ids })),
     },
+    condivisioni: {
+      crea: async c => { const x = corta(c); return data(() => sb.from('condivisioni').insert(x).select('id').single()); },
+      mie: () => data(() => sb.from('condivisioni').select('id,tipo,nome,creata,revocata,letture').order('creata', { ascending: false }).limit(50)),
+      revoca: id => data(() => sb.from('condivisioni').update({ revocata: true }).eq('id', id).select('id')),
+    },
   };
 }
 
@@ -536,5 +560,21 @@ export function fintoRemote(cfg = {}, go = null) {
         async nomi(ids) { const db = load(), id = pronta(db); return admin(db, id) ? db.users.filter(u => ids.includes(u.id)).map(u => ({ id: u.id, username: u.username })) : []; },
       };
     })(),
+    // link corti finti: stesse regole della migrazione 4
+    condivisioni: {
+      async crea(c) {
+        const x = corta(c), db = load(), id = me(db);
+        if (window.SV_FINTO_NO_CONDIVISIONI) throw new RemoteError(SEGN_ASSENTE, 'assente');
+        if (!/^[A-Za-z0-9_-]{20,400000}$/.test(x.dati)) throw new RemoteError('Contenuto del link non valido.', 'dati');
+        db.condivisioni = db.condivisioni || [];
+        const mie = db.condivisioni.filter(r => r.owner === id);
+        if (mie.filter(r => Date.now() - r.creata < 86400000).length >= 30) throw new RemoteError('al massimo 30 link corti al giorno', 'limite');
+        const nuovo = { ...x, id: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(9)))).replace(/\+/g, '-').replace(/\//g, '_'), owner: id, creata: Date.now(), revocata: false, letture: 0 };
+        db.condivisioni.push(nuovo); save(db);
+        return { id: nuovo.id };
+      },
+      async mie() { const db = load(), id = me(db); return (db.condivisioni || []).filter(r => r.owner === id).map(({ id, tipo, nome, creata, revocata, letture }) => ({ id, tipo, nome, creata: new Date(creata).toISOString(), revocata, letture })).reverse(); },
+      async revoca(cid) { const db = load(), id = me(db); const r = (db.condivisioni || []).find(x => x.id === cid && x.owner === id); if (r) { r.revocata = true; save(db); } return r ? [{ id: cid }] : []; },
+    },
   };
 }

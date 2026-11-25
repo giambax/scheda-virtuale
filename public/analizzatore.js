@@ -66,7 +66,7 @@ function laOnW(k, duty, f) {
 }
 function laReset() {
   Object.assign(LA, { ring: {}, cur: {}, lastT: 0, cnt: {}, pwm: {}, paused: false, end: 0, cur2: [null, null], pinsKey: '' });
-  LA.trig.at = null;
+  LA.trig.at = null; LA.trig.da = laNow();
   LA.want = laLoad();
   LA.auto = !LA.want;
   laButtons();
@@ -181,15 +181,17 @@ function laLabel(k) {
 // ------------------------------------------------------------------
 // Tempo: formato e righello
 // us = tempo in µs; res = risoluzione (decide i decimali); l'unità segue il valore
+const laNF = new Map();
+const laNum = (v, min, max) => { const k = min * 10 + max; let f = laNF.get(k); if (!f) laNF.set(k, f = new Intl.NumberFormat('it-IT', { minimumFractionDigits: min, maximumFractionDigits: max })); return f.format(v); };
 function laFmt(us, res) {
   const a = Math.abs(us) || res;
   const [div, u] = a >= 1e6 ? [1e6, 's'] : a >= 1e3 ? [1e3, 'ms'] : [1, 'µs'];
   const dec = Math.max(0, Math.min(6, -Math.floor(Math.log10(res / div) + 1e-9)));
-  return (us / div).toLocaleString('it-IT', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + ' ' + u;
+  return laNum(us / div, dec, dec) + ' ' + u;
 }
 function laFreq(dt) {
   const f = 1e6 / dt;
-  const n = (v, u) => v.toLocaleString('it-IT', { maximumFractionDigits: v < 10 ? 3 : v < 100 ? 2 : 1 }) + ' ' + u;
+  const n = (v, u) => laNum(v, 0, v < 10 ? 3 : v < 100 ? 2 : 1) + ' ' + u;
   return f >= 1e6 ? n(f / 1e6, 'MHz') : f >= 1e3 ? n(f / 1e3, 'kHz') : n(f, 'Hz');
 }
 function laStep(span, px) {
@@ -214,6 +216,13 @@ function laDraw() {
   if (cv.style.minHeight !== mh) cv.style.minHeight = mh;
   // trigger scattato: si ferma con il fronte a metà finestra
   const tg = LA.trig;
+  // trigger su un'onda PWM di un timer: i suoi fronti non sono registrati uno per uno, si cercano nell'onda
+  // ricostruita (laWalk) dal momento in cui il trigger è stato armato (al massimo gli ultimi 200 ms)
+  if (!LA.paused && tg.ch >= 0 && tg.at === null && LA.ch[tg.ch] && (LA.pwm[LA.ch[tg.ch]] || []).some(sg => sg.on)) {
+    const ora = laNow(), a = Math.max(tg.da ?? 0, ora - 200000);
+    let prima = null;
+    laWalk(LA.ch[tg.ch], a, ora, (t, lv) => { if (tg.at === null && prima !== null && t > a && lv === tg.edge) tg.at = t; prima = lv; }, 20000);
+  }
   if (!LA.paused && tg.ch >= 0 && tg.at !== null && laNow() >= tg.at + LA.span / 2) laPause(tg.at + LA.span / 2);
   const dpr = window.devicePixelRatio || 1;
   const W = cv.clientWidth, H = cv.clientHeight;
@@ -310,7 +319,7 @@ function laPause(at) {
 }
 function laResume() {
   LA.paused = false;
-  LA.trig.at = null;
+  LA.trig.at = null; LA.trig.da = laNow();
   // dopo la pausa: riparte dal livello attuale dei pin
   const t = laNow();
   for (const p of Object.keys(LA.cur)) laPush(+p, t, LA.cur[p]);
@@ -382,8 +391,8 @@ function laWire() {
   $('#la-togli').addEventListener('click', () => { LA.cur2 = [null, null]; });
   $('#la-auto').addEventListener('click', () => { LA.auto = true; LA.want = null; LA.pinsKey = ''; laSave(); laButtons(); });
   $('#la-esporta').addEventListener('click', laExport);
-  $('#la-trig-ch').addEventListener('change', e => { LA.trig.ch = +e.target.value; LA.trig.at = null; });
-  $('#la-trig-fr').addEventListener('change', e => { LA.trig.edge = +e.target.value; LA.trig.at = null; });
+  $('#la-trig-ch').addEventListener('change', e => { LA.trig.ch = +e.target.value; LA.trig.at = null; LA.trig.da = laNow(); });
+  $('#la-trig-fr').addEventListener('change', e => { LA.trig.edge = +e.target.value; LA.trig.at = null; LA.trig.da = laNow(); });
   const tAt = ev => { const W = cv.clientWidth, v = laView(W), r = cv.getBoundingClientRect(); return v.start + (ev.clientX - r.left - LA_L) / (W - LA_L - LA_R) * LA.span; };
   const usPerPx = () => LA.span / Math.max(1, cv.clientWidth - LA_L - LA_R);
   cv.addEventListener('wheel', ev => {

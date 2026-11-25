@@ -26,7 +26,7 @@ const S = {
   irq: {}, irqRate: {}, irqLast: null,
   uart: {}, uartSel: '2', serialChunks: [], baud: {},
   inputs: {}, warnCount: 0,
-  pinsKey: '', dirty: true,
+  pinsKey: '', pinsEl: {}, dirty: true,
 };
 devInitState();
 
@@ -238,6 +238,7 @@ function renderPins() {
   const key = JSON.stringify(list.map(i => [i.key, i.mode, i.pull, i.od, i.af, i.exti, i.adcCh, i.label]));
   if (key !== S.pinsKey) {
     S.pinsKey = key;
+    S.pinsEl = {};
     const el = $('#pins');
     if (!list.length) { el.innerHTML = `<p class="empty">${S.server.status === 'running' ? 'Il programma non ha ancora configurato nessun pin.' : 'Avvia un progetto: qui compaiono i pin che il programma usa, con LED, pulsanti e cursori per interagire.'}</p>`; return; }
     const groups = [['Uscite', list.filter(i => i.mode === 1 || (i.mode === 2 && /^TIM/.test(i.func)))], ['Ingressi', list.filter(i => i.mode === 0)], ['Analogici', list.filter(i => i.adcCh !== undefined || (i.mode === 3))], ['Periferiche', list.filter(i => i.mode === 2 && !/^TIM/.test(i.func))]];
@@ -261,10 +262,13 @@ function renderPins() {
       cmd(`V ${ch} ${v}`);
     }));
   }
+  if (S.pinsEl.key !== S.pinsKey) {   // elementi di ogni riga: si cercano una volta per griglia, non a ogni fotogramma
+    const q = s => document.querySelector(s);
+    S.pinsEl = { key: S.pinsKey, m: new Map(list.map(i => [i.key, { ind: q(`[data-ind="${i.key}"]`), lv: q(`[data-lv="${i.key}"]`), pt: q(`[data-pwmt="${i.key}"]`), pb: q(`[data-pwmb="${i.key}"]`) }])) };
+  }
   for (const i of list) {
-    const ind = document.querySelector(`[data-ind="${i.key}"]`);
-    const lv = document.querySelector(`[data-lv="${i.key}"]`);
-    if (lv) lv.textContent = i.level;
+    const { ind, lv, pt, pb } = S.pinsEl.m.get(i.key) || {};
+    if (lv && lv.textContent !== String(i.level)) lv.textContent = i.level;
     if (ind) {
       if (i.pwm && i.pwm.duty >= 0) {
         ind.classList.add('on');
@@ -274,11 +278,11 @@ function renderPins() {
         ind.style.opacity = '';
       }
     }
-    const pt = document.querySelector(`[data-pwmt="${i.key}"]`);
     if (pt) {
       const w = i.pwm;
-      pt.textContent = w && w.duty >= 0 ? `${(w.duty / 10).toFixed(1)}% · ${fmtHz(w.freq)}` : w && w.freq ? `${i.level} · ${fmtHz(w.freq)}` : (i.level ? '1' : '0');
-      document.querySelector(`[data-pwmb="${i.key}"]`).style.width = (w && w.duty >= 0 ? w.duty / 10 : i.level * 100) + '%';
+      const t = w && w.duty >= 0 ? `${(w.duty / 10).toFixed(1)}% · ${fmtHz(w.freq)}` : w && w.freq ? `${i.level} · ${fmtHz(w.freq)}` : (i.level ? '1' : '0');
+      if (pt.textContent !== t) pt.textContent = t;
+      if (pb) pb.style.width = (w && w.duty >= 0 ? w.duty / 10 : i.level * 100) + '%';
     }
   }
 }

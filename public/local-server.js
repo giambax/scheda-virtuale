@@ -3,18 +3,18 @@
 // ascoltano /api/events. Qui fetch ed EventSource vengono intercettati e la
 // stessa API è fatta con IndexedDB (progetti per nome utente), un worker che
 // compila (clang in WebAssembly) e un worker che esegue la scheda.
-import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-25a';
-import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-25a';
-import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-25a';
+import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-25e';
+import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-25e';
+import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-25e';
 import { unzipSync, zipSync } from '../vendor/fflate/esm/browser.js';
 
 const dec = new TextDecoder();
 
-import * as CFG from './config.js?v=2026-11-25a';
-import { supabaseRemote, fintoRemote } from './remote.js?v=2026-11-25a';
-import { sincronizza } from './sync.js?v=2026-11-25a';
-import { leggiLink, esercizioPulito } from './link.js?v=2026-11-25a';
-import { pulisciBreadboard } from './circuito.js?v=2026-11-25a';
+import * as CFG from './config.js?v=2026-11-25e';
+import { supabaseRemote, fintoRemote, leggiCorto } from './remote.js?v=2026-11-25e';
+import { sincronizza } from './sync.js?v=2026-11-25e';
+import { leggiLink, esercizioPulito } from './link.js?v=2026-11-25e';
+import { pulisciBreadboard } from './circuito.js?v=2026-11-25e';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -26,7 +26,13 @@ import { pulisciBreadboard } from './circuito.js?v=2026-11-25a';
 // avere COOP/COEP; qui ci si ferma, se no il compilatore partirebbe a scaricare llvm.core.wasm intero (75 MB)
 // invece della versione brotli che dà il service worker
 if ('serviceWorker' in navigator && !self.crossOriginIsolated && +(sessionStorage.getItem('sv-ricarica') || 0) < 2) await new Promise(() => {});
-const LINK = leggiLink(location.hash);
+// link corto (#c=<id>, supabase/migrazione-4-condivisioni.sql): si legge il contenuto e si apre come un link lungo
+const CORTO = /^#c=([A-Za-z0-9_-]{12})$/.exec(location.hash);
+let LINK;
+if (CORTO) {
+  const r = await leggiCorto(CFG, CORTO[1]);
+  LINK = r ? leggiLink(`#${r.tipo}=${r.dati}`) : { errore: 'Questo link corto non c\'è (più): chi l\'ha creato può averlo revocato, o è stato copiato male.' };
+} else LINK = leggiLink(location.hash);
 const ANTEPRIMA = !!LINK && !LINK.errore;
 let ACCOUNT = CFG.HA_ACCOUNT && !ANTEPRIMA;
 // ospite ("Continua come ospite"): tutto il sito, ma niente si salva — progetti solo in memoria (MEM),
@@ -40,11 +46,13 @@ else if (!ACCOUNT) try { user = shown = localStorage.getItem('sv-utente') || '';
 
 function openDb() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('scheda-virtuale', 2);
+    const r = indexedDB.open('scheda-virtuale', 3);
     r.onupgradeneeded = ev => {
       if (ev.oldVersion < 1) r.result.createObjectStore('progetti', { keyPath: ['utente', 'nome'] });
       // progetti eliminati qui mentre ero offline (si eliminano online alla prossima sincronizzazione)
       if (ev.oldVersion < 2) r.result.createObjectStore('eliminati', { keyPath: ['utente', 'id'] });
+      // cartella del computer collegata (File System Access): l'handle, per utente
+      if (ev.oldVersion < 3) r.result.createObjectStore('cartelle', { keyPath: 'utente' });
     };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -75,17 +83,120 @@ async function tx(mode, fn, store = 'progetti') {
     t.onerror = () => rej(t.error);
   });
 }
-const dbGet = nome => tx('readonly', s => s.get([user, nome]));
+const dbGet = nome => CARTELLA.prog.has(nome) ? Promise.resolve(copiaRec(CARTELLA.prog.get(nome).rec)) : tx('readonly', s => s.get([user, nome]));
 const dbPut = rec => tx('readwrite', s => s.put(rec));
 const dbAll = () => tx('readonly', s => s.getAll(IDBKeyRange.bound([user, ''], [user, '￿'])));
 
 const dbDel = nome => tx('readwrite', s => s.delete([user, nome]));
 // modifica fatta dall'utente: da sincronizzare
 async function userPut(rec) {
+  if (CARTELLA.prog.has(rec.nome)) return scriviCartella(rec);   // progetto della cartella collegata: sul disco
   rec.modified = Date.now();
   if (ACCOUNT) rec.sync = { ...(rec.sync || {}), dirty: true };
   await dbPut(rec);
   syncSoon();
+}
+
+// ------------------------------------------------------------------
+// Cartella collegata (File System Access API, Chrome/Edge): i progetti CubeIDE della cartella scelta si
+// leggono dal disco (Core/, .ioc, .cproject, .breadboard.json, .esercizio.json, .scheda-virtuale.json; mai
+// Debug/ Release/ Drivers/) e si salvano sul disco: solo i file cambiati, con createWritable (scrive in un
+// file temporaneo e lo sostituisce alla chiusura: atomico), avvisando se il file è cambiato sul disco nel
+// frattempo. Non si cancella mai niente sul disco. Non entrano nella sincronizzazione (dbAll non li vede).
+const CARTELLA = { radice: null, nome: '', stato: 'nessuna', prog: new Map() };   // prog: nome → { rec, dir, file: {rel: {h, mtime}} }
+const SALTA_DIR = /^(Debug|Release|Drivers|Middlewares|\.settings|\.git|\.metadata|node_modules)$/;
+const copiaRec = r => ({ ...r, files: { ...r.files }, sync: { ...(r.sync || {}) } });
+async function leggiProgettoDisco(dir) {
+  const files = {}, file = {};
+  async function giro(d, rel, prof) {
+    for await (const [nome, h] of d.entries()) {
+      const r = rel + nome;
+      if (h.kind === 'directory') { if (prof < 5 && !SALTA_DIR.test(nome)) await giro(h, r + '/', prof + 1); continue; }
+      if (!USEFUL(r) && !/^\.breadboard\.json$/.test(r)) continue;
+      if (prof === 0 && !/\.(ioc|json)$|^\.cproject$/.test(nome)) continue;   // in cima solo .ioc, .cproject e i nostri .json
+      const f = await h.getFile();
+      if (f.size > 2e6) continue;
+      files[r] = new Uint8Array(await f.arrayBuffer());
+      file[r] = { h, mtime: f.lastModified };
+    }
+  }
+  await giro(dir, '', 0);
+  return { files, file };
+}
+async function caricaCartella() {
+  const radice = CARTELLA.radice;
+  const nuovi = new Map();
+  // la cartella è un progetto, o contiene progetti (cartelle con un .ioc o Core/Src/main.c)
+  const eProgetto = async d => { for await (const [n, h] of d.entries()) { if (h.kind === 'file' && n.endsWith('.ioc')) return true; if (h.kind === 'directory' && n === 'Core') { try { await (await h.getDirectoryHandle('Src')).getFileHandle('main.c'); return true; } catch {} } } return false; };
+  const dirs = [];
+  if (await eProgetto(radice)) dirs.push(radice);
+  else for await (const [n, h] of radice.entries()) if (h.kind === 'directory' && !SALTA_DIR.test(n) && await eProgetto(h)) dirs.push(h);
+  for (const d of dirs.slice(0, 60)) {
+    const { files, file } = await leggiProgettoDisco(d);
+    if (!Object.keys(files).some(f => /^Core\/Src\/main\.c$/.test(f))) continue;
+    let nome = '📂 ' + d.name, k = 2;
+    while (nuovi.has(nome)) nome = `📂 ${d.name} (${k++})`;
+    let devices = null;
+    if (files['.scheda-virtuale.json']) { try { devices = cleanDevices(JSON.parse(dec.decode(files['.scheda-virtuale.json'])).devices); } catch {} delete files['.scheda-virtuale.json']; }
+    const vecchio = CARTELLA.prog.get(nome);
+    nuovi.set(nome, { rec: { utente: user, nome, files, devices, sync: {}, modified: Math.max(0, ...Object.values(file).map(x => x.mtime)), cartella: CARTELLA.nome }, dir: d, file, devicesScritti: JSON.stringify(devices), vecchio });
+  }
+  CARTELLA.prog = nuovi;
+  CARTELLA.stato = 'collegata';
+  return [...nuovi.keys()];
+}
+// scrive sul disco i file cambiati (mai cancellazioni)
+async function scriviCartella(rec) {
+  const p = CARTELLA.prog.get(rec.nome), enc = new TextEncoder();
+  const uguali = (a, b) => a && b && a.length === b.length && a.every((x, i) => x === b[i]);
+  const scritti = [];
+  const file = { ...rec.files };
+  if (rec.devices && JSON.stringify(rec.devices) !== p.devicesScritti) file['.scheda-virtuale.json'] = enc.encode(JSON.stringify({ devices: rec.devices }, null, 1));
+  for (const [rel, dati] of Object.entries(file)) {
+    if (rel !== '.scheda-virtuale.json' && uguali(dati, p.rec.files[rel])) continue;
+    if (rel.split('/').includes('..') || !(USEFUL(rel) || rel === '.breadboard.json')) continue;
+    let info = p.file[rel];
+    if (info) {
+      const ora = await info.h.getFile();
+      if (ora.lastModified !== info.mtime && !uguali(new Uint8Array(await ora.arrayBuffer()), p.rec.files[rel])
+          && !confirm(`${rel} è cambiato sul disco (forse da CubeIDE) dopo che il sito l'ha letto. Sovrascrivo con la versione del sito?\n\nAnnulla: lascio il file del disco com'è.`)) throw new Error(`${rel.split('/').pop()}: non salvato, il file sul disco è più nuovo`);
+    } else {
+      let d = p.dir;
+      const parti = rel.split('/');
+      for (const x of parti.slice(0, -1)) d = await d.getDirectoryHandle(x, { create: true });
+      info = { h: await d.getFileHandle(parti[parti.length - 1], { create: true }), mtime: 0 };
+    }
+    const w = await info.h.createWritable();      // file temporaneo, sostituito alla chiusura
+    await w.write(dati);
+    await w.close();
+    info.mtime = (await info.h.getFile()).lastModified;
+    p.file[rel] = info;
+    if (rel === '.scheda-virtuale.json') p.devicesScritti = JSON.stringify(rec.devices);
+    else p.rec.files[rel] = dati;
+    scritti.push(rel);
+  }
+  p.rec.devices = rec.devices;
+  p.rec.modified = Date.now();
+  if (scritti.length) log('info', `Salvato sul disco (${CARTELLA.nome}): ${scritti.map(r => r.split('/').pop()).join(', ')}`);
+}
+// file cambiati da fuori (es. CubeIDE): ritorna l'elenco dei file aggiornati
+async function controllaCartella(nome) {
+  const p = CARTELLA.prog.get(nome);
+  if (!p) return [];
+  const prima = p.file;
+  let letto;
+  try { letto = await leggiProgettoDisco(p.dir); } catch { return []; }
+  const cambiati = [];
+  for (const [rel, x] of Object.entries(letto.file)) {
+    if (rel === '.scheda-virtuale.json') continue;
+    if (!prima[rel] || prima[rel].mtime !== x.mtime) {
+      const a = letto.files[rel], b = p.rec.files[rel];
+      if (!b || a.length !== b.length || a.some((v, i) => v !== b[i])) { p.rec.files[rel] = a; cambiati.push(rel); }
+      prima[rel] = x;
+    }
+  }
+  if (cambiati.length) p.rec.modified = Date.now();
+  return cambiati;
 }
 
 // ------------------------------------------------------------------
@@ -183,7 +294,7 @@ function info(rec) {
   const ioc = iocOf(rec);
   const dev = mcuDefine(ioc.mcu);
   return {
-    id: rec.nome, name: rec.nome, workspace: ANTEPRIMA ? 'Aperto da un link' : 'Progetti di ' + shown, path: rec.nome,
+    id: rec.nome, name: rec.nome, workspace: rec.cartella ? '📂 Cartella «' + rec.cartella + '» (sul disco)' : ANTEPRIMA ? 'Aperto da un link' : 'Progetti di ' + shown, path: rec.nome,
     mcu: ioc.mcu || (ioc.file ? '' : 'STM32F401RETx?'), board: ioc.board || (ioc.file ? '' : 'senza .ioc: NUCLEO-F401RE'), modified: rec.modified, elfTime: 0,
     supported: !ioc.file || /^STM32F40?1|^STM32F411/i.test(ioc.mcu || '') || dev === 'STM32F401xE',
   };
@@ -252,7 +363,7 @@ function absorb(line) {
 
 // ------------------------------------------------------------------
 // Compilatore (worker che resta vivo: il clang da ~100 MB si carica una volta sola)
-const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-25a', import.meta.url), { type: 'module' });
+const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-25e', import.meta.url), { type: 'module' });
 let compSeq = 0;
 const compPending = new Map();
 let compReady = false;
@@ -304,7 +415,7 @@ function startSim(wasm) {
   state.startedAt = Date.now();
   state.paused = false;
   const sab = makeInput();
-  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-25a', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-25e', import.meta.url), { type: 'module' });
   const s = { worker, sab };
   sim = s;
   let buf = '', batch = [], flushT = null;
@@ -442,7 +553,7 @@ async function handle(url, body) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/state': return { ...state };
-    case '/api/projects': return (await dbAll()).map(info).sort((a, b) => b.modified - a.modified);
+    case '/api/projects': return [...(await dbAll()), ...[...CARTELLA.prog.values()].map(p => p.rec)].map(info).sort((a, b) => b.modified - a.modified);
     case '/api/project': {
       const rec = await dbGet(q.get('id'));
       if (!rec) return { error: 'progetto non trovato' };
@@ -515,6 +626,47 @@ window.SV = {
   setUser(n) { user = shown = n; try { localStorage.setItem('sv-utente', n); } catch {} },
   get account() { return ACCOUNT ? account : null; },
   get ospite() { return OSPITE; },
+  // cartella collegata (cartella.js)
+  cartella: {
+    supportata: typeof window.showDirectoryPicker === 'function',
+    get stato() { return { stato: CARTELLA.stato, nome: CARTELLA.nome, progetti: [...CARTELLA.prog.keys()] }; },
+    eCartella: nome => CARTELLA.prog.has(nome),
+    // handle: dal selettore (o una cartella OPFS nelle prove)
+    async collega(h) {
+      CARTELLA.radice = h; CARTELLA.nome = h.name || 'cartella';
+      if (!OSPITE) await tx('readwrite', s => s.put({ utente: user, h }), 'cartelle');
+      return caricaCartella();
+    },
+    // all'avvio: l'handle salvato e il permesso (granted: si carica subito; prompt: serve un clic)
+    async ricorda() {
+      if (OSPITE) return 'nessuna';
+      const r = await tx('readonly', s => s.get(user), 'cartelle').catch(() => null);
+      if (!r || !r.h) return 'nessuna';
+      CARTELLA.radice = r.h; CARTELLA.nome = r.h.name;
+      const perm = r.h.queryPermission ? await r.h.queryPermission({ mode: 'readwrite' }) : 'granted';
+      if (perm === 'granted') { await caricaCartella(); return 'collegata'; }
+      CARTELLA.stato = 'permesso';
+      return 'permesso';
+    },
+    async permesso() {
+      const p = await CARTELLA.radice.requestPermission({ mode: 'readwrite' });
+      if (p !== 'granted') throw new Error('Permesso negato: senza, il sito non può leggere la cartella.');
+      return caricaCartella();
+    },
+    async scollega() { CARTELLA.prog.clear(); CARTELLA.radice = null; CARTELLA.stato = 'nessuna'; CARTELLA.nome = ''; if (!OSPITE) await tx('readwrite', s => s.delete(user), 'cartelle'); },
+    ricarica: () => caricaCartella(),
+    controlla: nome => controllaCartella(nome),
+    // "Copia nel mio account": un progetto normale con gli stessi file (nome libero)
+    async copia(nome) {
+      const p = CARTELLA.prog.get(nome);
+      if (!p) throw new Error('progetto non trovato');
+      const nuovo = await freeName(nome.replace(/^📂\s*/, ''));
+      const r = copiaRec(p.rec);
+      delete r.cartella;
+      await userPut({ utente: user, nome: nuovo, files: r.files, devices: r.devices, sync: {} });
+      return nuovo;
+    },
+  },
   // ospite → account: i progetti aperti passano (in sessionStorage, solo per questa scheda) e dopo
   // l'accesso si copiano nell'account, con un nome libero se c'è già (come l'import della fase 1)
   async portaInAccount() {
@@ -563,7 +715,7 @@ window.SV = {
   },
   // progetto nuovo dal modello Nucleo-F401RE (modello/nucleo-f401re.json)
   async newProject(nome) {
-    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-25a')).json();
+    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-25e')).json();
     nome = await freeName(nome);
     const enc = new TextEncoder(), files = {};
     for (const [k, v] of Object.entries(m.files)) {
@@ -574,6 +726,7 @@ window.SV = {
     return nome;
   },
   async rename(nome, nuovo) {
+    if (CARTELLA.prog.has(nome)) throw new Error('È un progetto della cartella collegata: si rinomina sul disco (o da CubeIDE).');
     nuovo = nuovo.trim().slice(0, 60);
     if (!nuovo || nuovo === nome) return nome;
     if (await dbGet(nuovo)) throw new Error(`Esiste già un progetto "${nuovo}".`);
@@ -590,6 +743,7 @@ window.SV = {
     return nuovo;
   },
   async remove(nome) {
+    if (CARTELLA.prog.has(nome)) throw new Error('È un progetto della cartella collegata: dal sito non si cancella niente sul disco. Per toglierlo dall\'elenco scollega la cartella.');
     if (state.project && state.project.id === nome) { stopSim(); setStatus('idle', { project: null }); }
     const rec = await dbGet(nome);
     if (ACCOUNT && rec && rec.sync && rec.sync.id) await tx('readwrite', s => s.put({ utente: user, id: rec.sync.id, version: rec.sync.version }), 'eliminati');
@@ -691,7 +845,7 @@ if (ANTEPRIMA) await preparaAnteprima();
 else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
-  const { accedi } = await import('./auth.js?v=2026-11-25a');
+  const { accedi } = await import('./auth.js?v=2026-11-25e');
   account = await accedi(remote);
   if (account && account.ospite) {
     // localStorage dell'ospite: solo in memoria (temi, schede, guida… non restano nel browser)
@@ -718,18 +872,19 @@ else if (ACCOUNT) {
 }
 const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
 const portati = ACCOUNT ? await portaDaOspite() : [];
-for (const s of ['devices.js?v=2026-11-25a', 'app.js?v=2026-11-25a', 'analizzatore.js?v=2026-11-25a', 'web-ui.js?v=2026-11-25a']) await loadScript(s);
-await import('./editor.js?v=2026-11-25a');
-await import('./condividi.js?v=2026-11-25a');
-await import('./debug.js?v=2026-11-25a');
-await import('./breadboard.js?v=2026-11-25a');
-await import('./segnala.js?v=2026-11-25a');
-await import('./schema.js?v=2026-11-25a');
-await import('./layout.js?v=2026-11-25a');
-await import('./aggiorna.js?v=2026-11-25a');
+for (const s of ['devices.js?v=2026-11-25e', 'app.js?v=2026-11-25e', 'analizzatore.js?v=2026-11-25e', 'web-ui.js?v=2026-11-25e']) await loadScript(s);
+await import('./editor.js?v=2026-11-25e');
+await import('./condividi.js?v=2026-11-25e');
+await import('./debug.js?v=2026-11-25e');
+await import('./breadboard.js?v=2026-11-25e');
+await import('./segnala.js?v=2026-11-25e');
+await import('./schema.js?v=2026-11-25e');
+await import('./layout.js?v=2026-11-25e');
+await import('./aggiorna.js?v=2026-11-25e');
+await import('./cartella.js?v=2026-11-25e');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (portati.length) { log('info', `Portati nel tuo account dalla sessione da ospite: ${portati.join(', ')}`); await loadProjects(); await selectProject(portati[0]); }
-if (OSPITE) await import('./ospite.js?v=2026-11-25a');
+if (OSPITE) await import('./ospite.js?v=2026-11-25e');
 if (ANTEPRIMA || salvato) {
   await loadProjects();
   await selectProject(ANTEPRIMA ? LINK.nome : salvato);

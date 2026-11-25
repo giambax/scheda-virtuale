@@ -2,7 +2,8 @@
 // l'anteprima di un link aperto e il riquadro con la consegna dell'esercizio accanto all'editor.
 // Usa S, $, showTab, selectProject di app.js e SV di local-server.js.
 // Tutto quello che arriva da un link (nomi, titolo, consegna) si scrive con textContent, mai come HTML.
-import { creaLink, LINK_LUNGO, LINK_TROPPO } from './link.js?v=2026-11-25a';
+import { creaLink, LINK_LUNGO, LINK_TROPPO } from './link.js?v=2026-11-25e';
+import qrcode from '../vendor/qrcode/qrcode.js';
 
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
 
@@ -75,6 +76,84 @@ function mostraLink(p) {
     (r.tolti.length ? ` Non servono e non ci sono: ${r.tolti.map(f => f.split('/').pop()).join(', ')}.` : '');
   $('#cond-out').hidden = false;
   $('#cond-copiato').hidden = true;
+  ultimo = { url: r.url, nome: p.nome };
+  linkCorto();
+}
+
+// ------------------------------------------------------------------
+// Link corto (con account): il contenuto del link lungo va su Supabase sotto un id casuale → …/#c=<id>, con QR code
+let ultimo = null;
+const C = () => window.SV && SV.account && SV.remote && SV.remote.condivisioni ? SV.remote.condivisioni : null;
+function qrSVG(testo) {
+  const q = qrcode(0, 'M'); q.addData(testo); q.make();
+  const n = q.getModuleCount(), m = 4;
+  let p = '';
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) p += `M${x + m} ${y + m}h1v1h-1z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" class="cond-qr" role="img" aria-label="QR code del link"><rect width="100%" height="100%" fill="#fff"/><path d="${p}" fill="#000"/></svg>`;
+}
+function linkCorto(msg = '') {
+  const box = $('#cond-corto');
+  box.replaceChildren();
+  if (!C()) { box.append(el('p', 'muted small', 'Link corto con QR code: serve un account (il link lungo funziona lo stesso, anche senza).')); return; }
+  const b = el('button', 'small', '🔗 Crea un link corto (con QR code)');
+  b.type = 'button';
+  b.title = 'Il contenuto del link va sul server del sito sotto un codice casuale: il link diventa corto. Lo puoi revocare quando vuoi.';
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const m = /#(progetto|esercizio)=([A-Za-z0-9_-]+)$/.exec(ultimo.url);
+      const r = await C().crea({ tipo: m[1], dati: m[2], nome: ultimo.nome });
+      const url = location.origin + location.pathname + '#c=' + r.id;
+      $('#cond-link').value = url;
+      $('#cond-lung').className = 'small';
+      $('#cond-lung').textContent = `Link corto: ${url.length} caratteri. Si apre anche senza account; lo puoi revocare qui sotto («I miei link corti»).`;
+      box.replaceChildren();
+      const q = el('div', 'cond-qrbox'); q.innerHTML = qrSVG(url);   // SVG generato qui, nessun dato esterno
+      const sc = el('button', 'ghost small', '⬇ Scarica il QR (PNG)'); sc.type = 'button';
+      sc.addEventListener('click', () => scaricaQR(q.querySelector('svg'), r.id));
+      box.append(q, sc);
+      mie(box);
+    } catch (e) { linkCorto(e.code === 'assente' ? 'I link corti non sono ancora attivi su questo sito (manca un aggiornamento del database): usa il link lungo qui sopra.' : e.message || String(e)); }
+  });
+  box.append(b);
+  if (msg) box.append(el('p', 'small avviso', msg));
+  mie(box);
+}
+async function mie(box) {
+  const det = el('details', 'cond-mie');
+  det.append(el('summary', 'small', 'I miei link corti'));
+  const lista = el('div', 'small');
+  det.append(lista);
+  box.append(det);
+  det.addEventListener('toggle', async () => {
+    if (!det.open) return;
+    lista.replaceChildren(el('span', 'muted', 'Carico…'));
+    try {
+      const l = await C().mie();
+      lista.replaceChildren();
+      if (!l.length) lista.append(el('span', 'muted', 'Nessuno.'));
+      for (const c of l) {
+        const r = el('div', 'cond-riga');
+        r.append(el('span', c.revocata ? 'muted' : '', `${c.nome || '?'} · ${new Date(c.creata).toLocaleDateString('it-IT')} · aperto ${c.letture} volt${c.letture === 1 ? 'a' : 'e'}${c.revocata ? ' · revocato' : ''}`));
+        if (!c.revocata) {
+          const rv = el('button', 'ghost small', 'Revoca'); rv.type = 'button';
+          rv.addEventListener('click', async () => { if (!confirm('Revocare il link? Chi lo apre vedrà che non esiste più (non si può annullare).')) return; await C().revoca(c.id); det.open = false; det.open = true; });
+          const cp = el('button', 'ghost small', 'Copia'); cp.type = 'button';
+          cp.addEventListener('click', () => navigator.clipboard.writeText(location.origin + location.pathname + '#c=' + c.id).catch(() => {}));
+          r.append(cp, rv);
+        }
+        lista.append(r);
+      }
+    } catch (e) { lista.replaceChildren(el('span', 'avviso', e.message || String(e))); }
+  });
+}
+async function scaricaQR(svg, id) {
+  const img = new Image();
+  img.src = 'data:image/svg+xml;base64,' + btoa(new XMLSerializer().serializeToString(svg));
+  await img.decode();
+  const cv = document.createElement('canvas'); cv.width = cv.height = 600;
+  const g = cv.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(img, 0, 0, 600, 600);
+  const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `qr-${id}.png`; document.body.append(a); a.click(); a.remove();
 }
 
 async function apri(esercizio) {
@@ -121,4 +200,4 @@ $('#cond-copia').addEventListener('click', async () => {
 });
 
 // link incollato nella barra di una scheda già aperta sul sito: cambia solo il # → si ricarica per aprirlo
-window.addEventListener('hashchange', () => { if (/^#(progetto|esercizio)=/.test(location.hash)) location.reload(); });
+window.addEventListener('hashchange', () => { if (/^#(progetto|esercizio|c)=/.test(location.hash)) location.reload(); });

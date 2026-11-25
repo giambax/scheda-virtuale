@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-25a';
+import * as K from './circuito.js?v=2026-11-25e';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -730,43 +730,52 @@ function media(acc) {
   return out;
 }
 const lum = i => i > 5e-5 ? Math.min(1, Math.pow(i / 0.004, 0.7)) : 0;
+// elementi animati a ogni fotogramma: querySelector una volta sola (si ricerca se l'elemento non è più nella pagina)
+const elCache = new Map();
+function el1(sel) {
+  let x = elCache.get(sel);
+  if (!x || !x.isConnected) { x = document.querySelector(sel); elCache.set(sel, x); }
+  return x;
+}
+const attr = (x, k, v) => { if (x && x.getAttribute(k) !== v) x.setAttribute(k, v); };
 function aggiornaVista(now) {
+  if (elCache.size > 4000) elCache.clear();
   const pub = B.pub;
   for (const c of B.bb.comps) {
     const m = pub && pub.comp[c.id] || {};
     if (c.type === 'led') {
-      const b = lum(m.i || 0), g = document.querySelector(`[data-glow="${c.id}"]`), l = document.querySelector(`[data-lens="${c.id}"]`);
-      if (g) g.setAttribute('opacity', (b * 0.9).toFixed(2));
-      if (l) l.setAttribute('fill-opacity', (0.55 + 0.45 * b).toFixed(2));
+      const b = lum(m.i || 0), g = el1(`[data-glow="${c.id}"]`), l = el1(`[data-lens="${c.id}"]`);
+      attr(g, 'opacity', (b * 0.9).toFixed(2));
+      attr(l, 'fill-opacity', (0.55 + 0.45 * b).toFixed(2));
     } else if (c.type === 'seg7' || c.type === 'seg7x3') {
       const nd = c.type === 'seg7' ? 1 : 3;
       for (let j = 0; j < nd * 8; j++) {
-        const x = document.querySelector(`[data-seg="${c.id}:${j}"]`);
+        const x = el1(`[data-seg="${c.id}:${j}"]`);
         if (!x) continue;
         const b = lum(m['s' + j] || 0);
-        x.setAttribute('fill', b ? `rgb(${Math.round(70 + 185 * b)},${Math.round(20 + 40 * b)},${Math.round(20 + 30 * b)})` : '#3a1414');
+        attr(x, 'fill', b ? `rgb(${Math.round(70 + 185 * b)}, ${Math.round(20 + 40 * b)}, ${Math.round(20 + 30 * b)})` : '#3a1414');
       }
     } else if (c.type === 'buzzer') {
-      const on = Math.abs(m.v || 0) > 1.5, g = document.querySelector(`[data-glow="${c.id}"]`);
-      if (g) g.setAttribute('opacity', on ? '0.9' : '0');
+      const on = Math.abs(m.v || 0) > 1.5, g = el1(`[data-glow="${c.id}"]`);
+      attr(g, 'opacity', on ? '0.9' : '0');
       if (typeof buzzSet === 'function') buzzSet('bb' + c.id, 2300, on && inCorsa() && B.suono && B.suono.has(c.id));
     } else if (c.type === 'motor') {
       const a = B.motAng = B.motAng || {}, v = m.v || 0;
       a[c.id] = ((a[c.id] || 0) + v * 200 * ((now - (B.motT || now)) / 1000)) % 360;
-      const r = document.querySelector(`[data-rot="${c.id}"]`);
+      const r = el1(`[data-rot="${c.id}"]`);
       if (r) r.setAttribute('transform', `translate(15 -18) rotate(${a[c.id].toFixed(1)})`);
     } else if (c.type === 'servo') {
-      const r = document.querySelector(`[data-rot="${c.id}"]`), ang = angoloServo(c);
+      const r = el1(`[data-rot="${c.id}"]`), ang = angoloServo(c);
       if (r && ang !== null) r.setAttribute('transform', `rotate(${ang - 90} 10 -36)`);
     } else if (c.type === 'button') {
-      const x = document.querySelector(`[data-act="press"][data-id="${c.id}"]`);
-      if (x) x.setAttribute('fill', B.premuti.has(c.id) ? '#9a9a9a' : '#555');
+      const x = el1(`[data-act="press"][data-id="${c.id}"]`);
+      attr(x, 'fill', B.premuti.has(c.id) ? '#9a9a9a' : '#555');
     }
   }
   B.motT = now;
   aggiornaStrumenti(pub);
   const ld2 = document.getElementById('bb-ld2');
-  if (ld2) ld2.setAttribute('fill', pub && pub.ld2 > 5e-5 ? '#7dffad' : '#2d4a33');
+  attr(ld2, 'fill', pub && pub.ld2 > 5e-5 ? '#7dffad' : '#2d4a33');
   mostraProblemi(now);
   aggiornaStato();
 }

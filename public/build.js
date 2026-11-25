@@ -3,7 +3,7 @@
 // Stessa logica di build() in scheda-virtuale/server.js, ma con clang in
 // WebAssembly (YoWASP) e un file system virtuale in memoria.
 
-import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-25g';
+import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-25h';
 
 // Memoria lineare del WebAssembly (wasm-ld con --stack-first):
 //   0x000000–0x700000  stack (se trabocca si esce sotto lo 0 → errore, come un HardFault)
@@ -343,7 +343,8 @@ export async function buildProject(files, sim, hal, cc, log = () => {}, opz = {}
   let halObj = simHalCache.get(key);
   T.halCached = !!halObj;
   if (!halObj) {
-    const r = await run(['clang', ...common, ...(ugNoUif ? ['-DSIM_UG_NO_UIF'] : []), ...(debug ? ['-DSIM_DBG'] : []), 'sim/sim_hal.c', '-o', 'o/sim_hal.o']);
+    // la HAL simulata a -O2 (il codice del progetto resta a -O1): stesso comportamento, giri di ciclo più veloci
+    const r = await run(['clang', ...common.map(x => x === '-O1' ? '-O2' : x), ...(ugNoUif ? ['-DSIM_UG_NO_UIF'] : []), ...(debug ? ['-DSIM_DBG'] : []), 'sim/sim_hal.c', '-o', 'o/sim_hal.o']);
     if (r.code) return { ok: false, errors: parseDiagnostics(out), log: out, notes, T };
     halObj = r.files.o['sim_hal.o'];
     simHalCache.set(key, halObj);

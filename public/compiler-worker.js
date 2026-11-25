@@ -1,11 +1,11 @@
 // compiler-worker.js — clang in WebAssembly (YoWASP) in un worker che resta vivo:
 // il compilatore si scarica e si prepara una volta sola, le compilazioni dopo sono veloci.
 import { runClang } from '../vendor/yowasp-clang/gen/bundle.js';
-import { buildProject } from './build.js?v=2026-11-25g';
+import { buildProject } from './build.js?v=2026-11-25h';
 
 let simFiles = null;
 const loadSim = async () => simFiles || (simFiles = Object.fromEntries(await Promise.all(
-  ['sim_hal.c', 'sim_pre.h', 'cmsis_gcc.h'].map(async f => [f, await (await fetch('../sim/' + f + '?v=2026-11-25g')).text()]))));
+  ['sim_hal.c', 'sim_pre.h', 'cmsis_gcc.h'].map(async f => [f, await (await fetch('../sim/' + f + '?v=2026-11-25h')).text()]))));
 
 // header CMSIS/HAL della famiglia F4 forniti dal sito (strumenti/crea-pacchetto-hal.py)
 let halPack = null;

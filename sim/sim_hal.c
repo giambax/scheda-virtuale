@@ -85,6 +85,9 @@ SV_IMPORT("in")    uint32_t sv_in(char *p, uint32_t max);
 SV_IMPORT("sleep") void sv_sleep(double ms);
 SV_IMPORT("now")   double sv_now(void);
 #define LOOP_CYC  12u          /* cicli "spesi" da ogni giro di while/for */
+#ifndef GPIO_CYC
+#define GPIO_CYC  12u          /* cicli di una chiamata HAL_GPIO_Read/Write/TogglePin (sulla scheda, a -O0, ~20) */
+#endif
 
 int user_main(void);
 
@@ -336,7 +339,15 @@ static uint32_t clk_pclk1(void) { return clk_hclk() >> APBPrescTable[(RCC->CFGR 
 static uint32_t clk_pclk2(void) { return clk_hclk() >> APBPrescTable[(RCC->CFGR >> 13) & 7u]; }
 static uint32_t clk_tim1(void)  { return ((RCC->CFGR >> 10) & 7u) < 4u ? clk_pclk1() : clk_pclk1() * 2u; }
 static uint32_t clk_tim2(void)  { return ((RCC->CFGR >> 13) & 7u) < 4u ? clk_pclk2() : clk_pclk2() * 2u; }
-static uint64_t cycles_per_ms(void) { uint64_t c = clk_hclk() / 1000u; return c < 1000u ? 1000u : c; }
+/* cicli per ms: si ricalcola solo quando cambiano i registri del clock (prima: divisioni a 64 bit a ogni giro di ciclo) */
+static uint32_t cpm_cfgr = 0xFFFFFFFFu, cpm_pll = 0xFFFFFFFFu;
+static uint64_t cpm_val;
+static inline uint64_t cycles_per_ms(void)
+{
+  uint32_t a = RCC->CFGR, b = RCC->PLLCFGR;
+  if (a != cpm_cfgr || b != cpm_pll) { uint64_t c = clk_hclk() / 1000u; cpm_val = c < 1000u ? 1000u : c; cpm_cfgr = a; cpm_pll = b; }
+  return cpm_val;
+}
 
 void SystemInit(void) {}
 void SystemCoreClockUpdate(void) { SystemCoreClock = clk_hclk(); }
@@ -784,6 +795,7 @@ void HAL_GPIO_DeInit(GPIO_TypeDef *GPIOx, uint32_t GPIO_Pin)
 
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
 {
+  charge(GPIO_CYC);
   return (GPIOx->IDR & GPIO_Pin) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
 /* analizzatore logico: ogni scrittura con HAL_GPIO_WritePin/TogglePin esce subito con il
@@ -805,11 +817,13 @@ static void gpio_fine_emit(GPIO_TypeDef *g)
 }
 void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState)
 {
+  charge(GPIO_CYC);                     /* prima di leggere ODR: un interrupt può scattare qui, come sulla scheda */
   uint32_t o = GPIOx->ODR, n = PinState != GPIO_PIN_RESET ? (o | GPIO_Pin) : (o & ~(uint32_t)GPIO_Pin);
+  if (n == o) return;                   /* percorso veloce: niente cambia (il caso di gran lunga più comune) */
   GPIOx->ODR = n;
-  if (n != o) { gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, n ^ o); }
+  gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, n ^ o);
 }
-void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { GPIOx->ODR ^= GPIO_Pin; gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, GPIO_Pin); }
+void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { charge(GPIO_CYC); GPIOx->ODR ^= GPIO_Pin; gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, GPIO_Pin); }
 HAL_StatusTypeDef HAL_GPIO_LockPin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { (void)GPIOx; (void)GPIO_Pin; return HAL_OK; }
 
 __weak void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) { (void)GPIO_Pin; }

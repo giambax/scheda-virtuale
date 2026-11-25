@@ -27,7 +27,8 @@ export function writeInput(sab, lines) {
 class Exit extends Error { constructor(code) { super('exit ' + code); this.code = code; } }
 
 // onOut(testo) riceve le righe di eventi; restituisce il codice d'uscita (42 = reset software)
-export function runSim(module, sab, onOut, onConsole = () => {}) {
+// onFlush: prima di ogni attesa si manda alla pagina quello che è in coda (es. il debug fermo su una riga)
+export function runSim(module, sab, onOut, onConsole = () => {}, onFlush = () => {}) {
   const h = new Int32Array(sab, 0, 4), ring = new Uint8Array(sab, 16, IN_SZ);
   const dec = new TextDecoder('latin1');
   let mem;
@@ -47,6 +48,7 @@ export function runSim(module, sab, onOut, onConsole = () => {}) {
       return n;
     },
     sleep: ms => {
+      onFlush();
       if (Atomics.load(h, 1) !== Atomics.load(h, 2)) return;   // c'è già un comando da leggere
       Atomics.wait(h, 0, Atomics.load(h, 0), ms);
     },

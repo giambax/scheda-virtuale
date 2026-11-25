@@ -9,8 +9,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#151920">
 <link rel="apple-touch-icon" href="icone/icona-180.png">
-<link rel="stylesheet" href="style.css?v=2026-11-24i">
-<link rel="stylesheet" href="web.css?v=2026-11-24i">
+<link rel="stylesheet" href="style.css?v=2026-11-25a">
+<link rel="stylesheet" href="web.css?v=2026-11-25a">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -47,7 +47,7 @@ if ('serviceWorker' in navigator) {
   </div>
   <div class="controls">
     <button id="btn-run" class="primary" disabled title="Compila e avvia il progetto selezionato">▶ Avvia</button>
-    <button id="btn-debug" hidden disabled title="Compila e avvia con il debugger: breakpoint, passo passo, variabili locali">🐞 Debug</button>
+    <button id="btn-debug" disabled title="Compila e avvia con il debugger: breakpoint (clic sui numeri di riga), passo passo, variabili locali e globali, stack">⏯ Debug</button>
     <button id="btn-reset" disabled title="Come il pulsante nero RESET della scheda">⟲ Reset</button>
     <button id="btn-pause" disabled title="Ferma il tempo simulato">⏸ Pausa</button>
     <button id="btn-stop" disabled title="Spegni la scheda">■ Stop</button>
@@ -372,6 +372,6 @@ if ('serviceWorker' in navigator) {
   </form>
 </dialog>
 
-<script type="module" src="local-server.js?v=2026-11-24i"></script>
+<script type="module" src="local-server.js?v=2026-11-25a"></script>
 </body>
 </html>

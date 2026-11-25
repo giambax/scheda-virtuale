@@ -4,7 +4,7 @@
 // Con Google/GitHub (config.js PROVIDER_ATTIVI): pulsanti "Continua con…", e al primo accesso la
 // scelta del nome utente (pane "nome"). Se si torna da Google/GitHub già dentro (collega account,
 // o errore), il messaggio va in u.avviso e lo mostra web-ui.js nella finestra "Il tuo account".
-import { PROVIDER } from './remote.js?v=2026-11-24i';
+import { PROVIDER } from './remote.js?v=2026-11-25a';
 const $ = s => document.querySelector(s);
 let providers = [];
 

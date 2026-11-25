@@ -542,3 +542,20 @@ body[data-vista="breadboard"] .vista-btn.on { background: var(--panel); }
 .sch-sim.sch-sel { color: var(--accent); }
 .sch-lab text { font-family: sans-serif !important; }
 .sch-barra { display: flex; gap: 6px; align-items: center; }
+
+/* debug passo passo (debug.js) */
+.dbgbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px; margin: 0 !important; background: color-mix(in srgb, #ffc400 14%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, #ffc400 45%, var(--border)); }
+.dbg-tasti { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.dbg-tasti button { padding: 4px 10px; font-size: 12.5px; }
+.dbg-dove { color: var(--text); font-weight: 600; }
+.dbg-griglia { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 16px; padding: 10px 12px; align-content: start; }
+.dbg-griglia h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.dbg-stack { margin: 0; padding-left: 20px; }
+.dbg-stack li { cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.dbg-stack li.on { background: var(--accent-soft); }
+.dbg-tab { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dbg-tab td { padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; word-break: break-all; }
+.dbg-tab td:first-child { white-space: nowrap; font-weight: 600; }
+.dbg-watch { display: flex; gap: 6px; margin-top: 6px; }
+.dbg-watch input { flex: 1; min-width: 0; }
+#pane-vars.active { overflow: auto; }

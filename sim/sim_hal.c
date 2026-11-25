@@ -2044,6 +2044,9 @@ static void emit_changes(void)
 /* Passo di simulazione: 1 ms                                          */
 static double next_deadline;            /* ms (orologio della pagina) */
 static void read_commands(void);
+#ifdef SIM_DBG
+static void dbg_comando(char *line);
+#endif
 
 /* tempo reale: se la simulazione è avanti, aspetta (Atomics.wait nel worker;
  * si sveglia subito se arriva un comando dalla pagina) */
@@ -2253,6 +2256,10 @@ static void handle_line(char *line)
     if (s > 0) speed = s;
   } else if (line[0] == 'P') {
     paused = atoi(line + 1) != 0;
+#ifdef SIM_DBG
+  } else if (line[0] == 'B' || line[0] == 'Z') {
+    dbg_comando(line);
+#endif
   } else if (line[0] == 'G') {
     /* G <id> <addr hex> <size>   oppure   G -   (cancella tutto) */
     int id; unsigned addr; unsigned size;
@@ -2282,6 +2289,117 @@ static void read_commands(void)
     if (have == sizeof buf - 1) have = 0;      /* riga troppo lunga: scartata */
   }
 }
+
+#ifdef SIM_DBG
+/* ------------------------------------------------------------------ */
+/* Debug passo passo (fase 2, punto E). Il codice dell'utente è preparato da public/strumenta.js:
+ * __svr(id) all'inizio di ogni istruzione (id = (file+1)·100000 + riga), __svl(...) dopo le dichiarazioni
+ * delle variabili locali, __svg per le globali; __sve/__svx (cleanup) contano entrate e uscite delle funzioni.
+ * Quando ci si deve fermare: righe "Y …" alla pagina (stop, stack, variabili) e attesa dei comandi
+ * ("Z c|s|n|o|p", "B id id …") senza far avanzare il tempo simulato. */
+#define DBG_MAXF 48
+#define DBG_MAXL 40
+#define DBG_MAXG 256
+typedef struct { const char *nome; void *ind; uint32_t dim; char tipo; uint32_t elem; } dbgvar_t;
+typedef struct { void *fn; uint32_t riga; int nloc; dbgvar_t loc[DBG_MAXL]; } dbgframe_t;
+static dbgframe_t dbg_st[DBG_MAXF];
+static int dbg_prof;
+static dbgvar_t dbg_glob[DBG_MAXG];
+static int dbg_nglob;
+static struct { void *fn; const char *nome; } dbg_fun[512];
+static int dbg_nfun;
+static uint32_t dbg_bp[256];
+static int dbg_nbp;
+static volatile int dbg_modo = 1;          /* 0 corre, 1 entra (passo), 2 passo sopra, 3 esci, 4 pausa; all'avvio si ferma sulla prima riga */
+static int dbg_rif, dbg_fermo, dbg_dentro;
+
+void __svf(void *fn, const char *nome) { if (dbg_nfun < 512) { dbg_fun[dbg_nfun].fn = fn; dbg_fun[dbg_nfun].nome = nome; dbg_nfun++; } }
+void __svg(const char *nome, void *ind, unsigned dim, int tipo, unsigned elem)
+{ if (dbg_nglob < DBG_MAXG) { dbgvar_t *v = &dbg_glob[dbg_nglob++]; v->nome = nome; v->ind = ind; v->dim = dim; v->tipo = (char)tipo; v->elem = elem; } }
+void __svl(const char *nome, void *ind, unsigned dim, int tipo, unsigned elem)
+{
+  if (dbg_prof < 1 || dbg_prof > DBG_MAXF) return;
+  dbgframe_t *f = &dbg_st[dbg_prof - 1];
+  int i;
+  for (i = 0; i < f->nloc && strcmp(f->loc[i].nome, nome) != 0; i++) ;
+  if (i == f->nloc) { if (f->nloc >= DBG_MAXL) return; f->nloc++; }
+  dbgvar_t *v = &f->loc[i]; v->nome = nome; v->ind = ind; v->dim = dim; v->tipo = (char)tipo; v->elem = elem;
+}
+/* entrata in una funzione dell'utente (la registra per il nome) e uscita, con __attribute__((cleanup)) */
+int __sve(void *fn, const char *nome)
+{
+  int k;
+  for (k = 0; k < dbg_nfun && dbg_fun[k].fn != fn; k++) ;
+  if (k == dbg_nfun) __svf(fn, nome);
+  if (dbg_prof < DBG_MAXF) { dbg_st[dbg_prof].fn = fn; dbg_st[dbg_prof].riga = 0; dbg_st[dbg_prof].nloc = 0; }
+  dbg_prof++;
+  return 0;
+}
+void __svx(int *k) { (void)k; if (dbg_prof > 0) dbg_prof--; }
+
+static const char *dbg_nome(void *fn)
+{
+  for (int i = 0; i < dbg_nfun; i++) if (dbg_fun[i].fn == fn) return dbg_fun[i].nome;
+  return "?";
+}
+static void dbg_var(const char *dove, int f, const dbgvar_t *v)
+{
+  static const char hx[] = "0123456789abcdef";
+  char b[700];
+  uint32_t n = v->dim > 256 ? 256 : v->dim;
+  int o = snprintf(b, 200, "Y v %s %d %s %c %u %u ", dove, f, v->nome, v->tipo ? v->tipo : 's', (unsigned)v->elem, (unsigned)v->dim);
+  const uint8_t *p = (const uint8_t *)v->ind;
+  for (uint32_t i = 0; i < n; i++) { b[o++] = hx[p[i] >> 4]; b[o++] = hx[p[i] & 15]; }
+  b[o] = 0;
+  emit("%s", b);
+}
+static void dbg_ferma(uint32_t id, const char *perche)
+{
+  int nf = dbg_prof > DBG_MAXF ? DBG_MAXF : dbg_prof;
+  emit("Y stop %u %s %d", (unsigned)id, perche, dbg_prof);
+  for (int i = nf - 1; i >= 0; i--) emit("Y f %d %s %u", i, dbg_nome(dbg_st[i].fn), (unsigned)dbg_st[i].riga);
+  for (int i = nf - 1; i >= 0; i--) for (int j = 0; j < dbg_st[i].nloc; j++) dbg_var("l", i, &dbg_st[i].loc[j]);
+  for (int j = 0; j < dbg_nglob; j++) dbg_var("g", 0, &dbg_glob[j]);
+  emit("Y fine");
+  out_flush();
+  dbg_fermo = 1;
+  while (dbg_fermo) { sv_sleep(25); read_commands(); }
+  next_deadline = sv_now();
+  emit("Y via");
+}
+void __svr(unsigned id)
+{
+  if (dbg_prof > 0 && dbg_prof <= DBG_MAXF) dbg_st[dbg_prof - 1].riga = id;
+  if (dbg_dentro) return;
+  int stop = 0;
+  switch (dbg_modo) {
+    case 1: case 4: stop = 1; break;
+    case 2: stop = dbg_prof <= dbg_rif; break;
+    case 3: stop = dbg_prof < dbg_rif; break;
+  }
+  if (!stop) for (int i = 0; i < dbg_nbp; i++) if (dbg_bp[i] == id) { stop = 2; break; }
+  if (!stop) return;
+  dbg_dentro = 1;
+  dbg_ferma(id, stop == 2 ? "bp" : dbg_modo == 4 ? "pausa" : "passo");
+  dbg_dentro = 0;
+}
+/* comandi del debug dalla pagina */
+static void dbg_comando(char *line)
+{
+  if (line[0] == 'B') {
+    char *p = line + 1;
+    dbg_nbp = 0;
+    while (*p && dbg_nbp < 256) { while (*p == ' ') p++; if (!*p) break; dbg_bp[dbg_nbp++] = (uint32_t)strtoul(p, &p, 10); }
+  } else if (line[0] == 'Z') {
+    char c = line[2];
+    if (c == 'c') { dbg_modo = 0; dbg_fermo = 0; }
+    else if (c == 's') { dbg_modo = 1; dbg_fermo = 0; }
+    else if (c == 'n') { dbg_modo = 2; dbg_rif = dbg_prof; dbg_fermo = 0; }
+    else if (c == 'o') { dbg_modo = 3; dbg_rif = dbg_prof; dbg_fermo = 0; }
+    else if (c == 'p') { if (!dbg_fermo) dbg_modo = 4; }
+  }
+}
+#endif
 
 int main(void)
 {

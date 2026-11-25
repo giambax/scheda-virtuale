@@ -2,7 +2,7 @@
 // Sostituisce la vista "Codice" di app.js (solo lettura): file aperti a schede, colori del C,
 // numeri di riga, ricerca (Ctrl/⌘+F), Salva e ricompila (Ctrl/⌘+S), errori del compilatore
 // segnati nel codice. Usa S, $, showTab, doRun, selectProject di app.js.
-import * as CM from '../vendor/codemirror/codemirror.js';
+import * as CM from '../vendor/codemirror/codemirror-2.js';
 
 const E = {
   proj: null,          // progetto aperto nell'editor
@@ -12,13 +12,39 @@ const E = {
   cur: null,
 };
 
+// debug (debug.js): breakpoint nella colonna dei numeri di riga e riga corrente evidenziata.
+// Il contenuto lo decide debug.js (window.SVdbg): qui solo il disegno e il clic.
+const aggiornaDbg = CM.StateEffect.define();
+class PuntoBP extends CM.GutterMarker { constructor(ok) { super(); this.ok = ok; } eq(o) { return o.ok === this.ok; } toDOM() { const d = document.createElement('span'); d.className = 'cm-bp' + (this.ok ? '' : ' cm-bp-no'); d.title = this.ok ? 'Breakpoint (clic per toglierlo)' : 'Breakpoint su una riga senza istruzioni: si ferma alla prima istruzione dopo'; return d; } }
+const BP_SI = new PuntoBP(true), BP_NO = new PuntoBP(false);
+const dbgGutter = () => CM.gutter({
+  class: 'cm-bp-gutter',
+  lineMarker(view, line) { const d = window.SVdbg; if (!d || !E.cur) return null; const n = view.state.doc.lineAt(line.from).number, st = d.statoBP(E.cur, n); return st === 1 ? BP_SI : st === 2 ? BP_NO : null; },
+  lineMarkerChange: u => u.transactions.some(t => t.effects.some(e => e.is(aggiornaDbg))),
+  initialSpacer: () => BP_SI,
+  domEventHandlers: { mousedown(view, line) { const d = window.SVdbg; if (!d || !E.cur) return false; d.cambiaBP(E.cur, view.state.doc.lineAt(line.from).number); return true; } },
+});
+const rigaCorrente = CM.StateField.define({
+  create: () => CM.Decoration.none,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(aggiornaDbg)) {
+      const d = window.SVdbg, r = d && E.cur ? d.rigaCorrente(E.cur) : 0;
+      if (!r || r > tr.state.doc.lines) return CM.Decoration.none;
+      return CM.Decoration.set([CM.Decoration.line({ class: 'cm-riga-dbg' }).range(tr.state.doc.line(r).from)]);
+    }
+    return tr.docChanged ? v.map(tr.changes) : v;
+  },
+  provide: f => CM.EditorView.decorations.from(f),
+});
+function ridisegnaDbg() { view.dispatch({ effects: aggiornaDbg.of(null) }); }
+
 const dark = () => matchMedia('(prefers-color-scheme: dark)').matches || document.documentElement.dataset.theme === 'dark';
 
 // ro: file in sola lettura (dato da un esercizio)
 function extensions(ro) {
   return [
     ...(ro ? [CM.EditorState.readOnly.of(true)] : []),
-    CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(), CM.history(), CM.foldGutter(),
+    dbgGutter(), rigaCorrente, CM.lineNumbers(), CM.highlightActiveLineGutter(), CM.highlightSpecialChars(), CM.history(), CM.foldGutter(),
     CM.drawSelection(), CM.dropCursor(), CM.indentOnInput(), CM.bracketMatching(), CM.closeBrackets(),
     CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightActiveLine(), CM.highlightSelectionMatches(),
     CM.cpp(), CM.lintGutter(),
@@ -27,6 +53,7 @@ function extensions(ro) {
       ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap, CM.indentWithTab,
     ]),
     CM.EditorView.updateListener.of(u => { if (u.docChanged) renderTabs(); }),
+    CM.EditorView.theme({ '.cm-bp-gutter .cm-gutterElement': { cursor: 'pointer', padding: '0 2px 0 4px' }, '.cm-bp': { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: '#e53935', boxShadow: '0 0 0 1px #0004' }, '.cm-bp-no': { background: 'transparent', border: '2px solid #e53935', width: '7px', height: '7px' }, '.cm-riga-dbg': { background: 'rgba(255, 196, 0, .22)', outline: '1px solid rgba(255, 196, 0, .55)' } }),
     CM.EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace', fontSize: '12.5px' } }),
   ];
 }
@@ -64,6 +91,7 @@ function show(rel, line) {
   S.curFile = rel;
   view.setState(E.states.get(rel));
   view.dispatch(CM.setDiagnostics(view.state, diagnostics(view.state, rel)));
+  ridisegnaDbg();
   if (line && line <= view.state.doc.lines) {
     const pos = view.state.doc.line(line).from;
     view.dispatch({ selection: { anchor: pos }, effects: CM.EditorView.scrollIntoView(pos, { y: 'center' }) });
@@ -162,5 +190,5 @@ window.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAndRun(); }
 });
 window.addEventListener('beforeunload', e => { if (E.open.some(isDirty)) { e.preventDefault(); e.returnValue = ''; } });
-window.SVeditor = { show, saveAll, isDirty: () => E.open.some(isDirty), view };
+window.SVeditor = { show, saveAll, isDirty: () => E.open.some(isDirty), view, ridisegnaDbg, get file() { return E.cur; } };
 if (S.selId) { window.renderFiles(); window.renderCode(); }

@@ -357,7 +357,7 @@ function onSimLine(line) {
     case 'U': appendSerial(a[1], hexToStr(a[2]), '', a[2]); break;
     case 'P': appendSerial('2', hexToStr(a[1]), 'pf', a[1]); break;
     case 'N': S.baud[a[1]] = +a[2]; serialBaudCheck(); break;
-    case 'Y': if (window.dbgOnY) dbgOnY(a[1], a[2] || ''); break;
+    case 'Y': if (window.dbgOnY) dbgOnY(line); break;
     case 'B': devOnB(a); break;
     case 'J': devOnJ(a); break;
   }

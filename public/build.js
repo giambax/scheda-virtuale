@@ -3,6 +3,8 @@
 // Stessa logica di build() in scheda-virtuale/server.js, ma con clang in
 // WebAssembly (YoWASP) e un file system virtuale in memoria.
 
+import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-25a';
+
 // Memoria lineare del WebAssembly (wasm-ld con --stack-first):
 //   0x000000–0x700000  stack (se trabocca si esce sotto lo 0 → errore, come un HardFault)
 //   0x700000–0x800000  registri delle periferiche (zone qui sotto)
@@ -181,6 +183,11 @@ function parseDiagnostics(out) {
 }
 
 // albero per il file system virtuale di YoWASP: "a/b/c.h" → { a: { b: { 'c.h': … } } }
+function getP(tree, rel) {
+  let t = tree;
+  for (const p of rel.split('/').filter(Boolean)) { if (!t || typeof t !== 'object') return undefined; t = t[p]; }
+  return t;
+}
 function put(tree, rel, data) {
   const parts = rel.split('/').filter(Boolean);
   let t = tree;
@@ -231,7 +238,7 @@ export function mcuDefine(mcu) {
 // files: file del progetto (percorsi relativi, come da cartella o zip); sim: { 'sim_hal.c', 'sim_pre.h', 'cmsis_gcc.h' }
 // hal: header CMSIS/HAL forniti dal sito ({ files, ugNoUif }, vendor/stm32f4/pacchetto.json)
 // cc: { runClang } di @yowasp/clang
-export async function buildProject(files, sim, hal, cc, log = () => {}) {
+export async function buildProject(files, sim, hal, cc, log = () => {}, opz = {}) {
   const T = { start: Date.now() };
   const root = projectRoot(files);
   if (root === null) return { ok: false, errors: [{ file: '', line: 0, msg: 'Non trovo Core/Src/main.c: scegli la cartella del progetto CubeIDE.' }] };
@@ -299,6 +306,17 @@ export async function buildProject(files, sim, hal, cc, log = () => {}) {
     notes.push(`${f.split('/').pop()}: ${h.names.map(x => x + '()').join(', ')} è scritta dentro un'altra funzione (lo accetta solo GCC): nel simulatore la sposto fuori. Meglio scriverla prima di main().`);
     put(tree.p, f, h.text);
   }
+  // debug passo passo (strumenta.js): punti di arresto, variabili e funzioni registrate; -O0 per vedere tutto
+  const debug = opz.debug ? { file: [] } : null;
+  if (debug) {
+    put(tree.sim, 'sim_dbg.h', PROLOGO);
+    for (let i = 0; i < srcs.length; i++) {
+      const cur = getP(tree.p, srcs[i]);
+      const r = strumenta(typeof cur === 'string' ? cur : text(cur !== undefined ? cur : P[srcs[i]]), i);
+      put(tree.p, srcs[i], r.testo);
+      debug.file.push({ rel: srcs[i], righe: r.righe, funzioni: r.funzioni, globali: r.globali });
+    }
+  }
 
   let out = '';
   const capture = { stdout: b => { if (b) out += dec.decode(b); }, stderr: b => { if (b) out += dec.decode(b); } };
@@ -312,7 +330,7 @@ export async function buildProject(files, sim, hal, cc, log = () => {}) {
   const failed = [];
   for (let i = 0; i < srcs.length; i++) {
     const o = `o/u${i}.o`;
-    const r = await run(['clang', ...common, '-include', 'sim/sim_pre.h', '-Dmain=user_main', '-iquote', 'p/' + srcs[i].split('/').slice(0, -1).join('/'), 'p/' + srcs[i], '-o', o]);
+    const r = await run(['clang', ...(debug ? common.map(a => a === '-O1' ? '-O0' : a) : common), '-include', 'sim/sim_pre.h', ...(debug ? ['-include', 'sim/sim_dbg.h'] : []), '-Dmain=user_main', '-iquote', 'p/' + srcs[i].split('/').slice(0, -1).join('/'), 'p/' + srcs[i], '-o', o]);
     if (r.code) failed.push(srcs[i]);
     else objs[o] = r.files.o[`u${i}.o`];
   }
@@ -320,12 +338,12 @@ export async function buildProject(files, sim, hal, cc, log = () => {}) {
   if (failed.length) return { ok: false, errors: parseDiagnostics(out), log: out, notes, T };
 
   // HAL simulata: dipende solo da header e simboli → riusata se non cambiano
-  const key = await hash(fingerprint + defs.join(' ') + ugNoUif + sim['sim_hal.c'] + sim['sim_pre.h']);
+  const key = await hash(fingerprint + defs.join(' ') + ugNoUif + (debug ? 'dbg' : '') + sim['sim_hal.c'] + sim['sim_pre.h']);
   T.halStart = Date.now();
   let halObj = simHalCache.get(key);
   T.halCached = !!halObj;
   if (!halObj) {
-    const r = await run(['clang', ...common, ...(ugNoUif ? ['-DSIM_UG_NO_UIF'] : []), 'sim/sim_hal.c', '-o', 'o/sim_hal.o']);
+    const r = await run(['clang', ...common, ...(ugNoUif ? ['-DSIM_UG_NO_UIF'] : []), ...(debug ? ['-DSIM_DBG'] : []), 'sim/sim_hal.c', '-o', 'o/sim_hal.o']);
     if (r.code) return { ok: false, errors: parseDiagnostics(out), log: out, notes, T };
     halObj = r.files.o['sim_hal.o'];
     simHalCache.set(key, halObj);
@@ -345,7 +363,7 @@ export async function buildProject(files, sim, hal, cc, log = () => {}) {
     if (!r.code) {
       T.link = Date.now() - T.linkStart;
       T.total = Date.now() - T.start;
-      return { ok: true, wasm: r.files['scheda.wasm'], stubs, errors: [], log: out, notes, ioc, T };
+      return { ok: true, wasm: r.files['scheda.wasm'], stubs, errors: [], log: out, notes, ioc, T, debug };
     }
     const undef = [...new Set([...out.matchAll(/undefined symbol: ([A-Za-z0-9_]+)/g)].map(m => m[1]))].filter(s => !stubs.includes(s));
     if (!undef.length) return { ok: false, errors: [{ file: '', line: 0, msg: 'Errore di link:\n' + out.trim() }], log: out, notes, T };

@@ -64,6 +64,8 @@
 #undef HAL_ADC_ConfigChannel
 #undef HAL_ADC_GetValue
 #include <stdio.h>
+#include <stddef.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -2314,7 +2316,7 @@ static void read_commands(void)
 #define DBG_MAXF 48
 #define DBG_MAXL 40
 #define DBG_MAXG 256
-typedef struct { const char *nome; void *ind; uint32_t dim; char tipo; uint32_t elem; } dbgvar_t;
+typedef struct { const char *nome; void *ind; uint32_t dim; char tipo; uint32_t elem; const char *tn; } dbgvar_t;
 typedef struct { void *fn; uint32_t riga; int nloc; dbgvar_t loc[DBG_MAXL]; } dbgframe_t;
 static dbgframe_t dbg_st[DBG_MAXF];
 static int dbg_prof;
@@ -2327,17 +2329,77 @@ static int dbg_nbp;
 static volatile int dbg_modo = 1;          /* 0 corre, 1 entra (passo), 2 passo sopra, 3 esci, 4 pausa; all'avvio si ferma sulla prima riga */
 static int dbg_rif, dbg_fermo, dbg_dentro;
 
+/* Punto H: tipi per la pagina. Campi delle struct ("Y t tipo campo offset dim tipo elem tipocampo") registrati dal
+ * codice dell'utente (__svt, dal costruttore di strumenta.js) e qui sotto quelli delle periferiche e degli handle della
+ * HAL; valori degli enum ("Y n tipo nome valore"); periferiche come variabili da osservare ("Y v r …": GPIOA->ODR).
+ * Si mandano alla prima fermata. "Z w indirizzo esadecimale" scrive una variabile da fermi (solo dentro una variabile
+ * registrata) e rimanda lo stato; "B id*n" = breakpoint che si ferma dalla n-esima volta. */
+#define DBG_MAXT 768
+#define DBG_MAXN 256
+typedef struct { const char *tipo, *campo; uint32_t off, dim; char t; uint32_t elem; const char *tn; } dbgcampo_t;
+static dbgcampo_t dbg_campi[DBG_MAXT];
+static int dbg_ncampi;
+static struct { const char *tipo, *nome; long long v; } dbg_enum[DBG_MAXN];
+static int dbg_nenum, dbg_tipi_mandati;
+void __svt(const char *tipo, const char *campo, unsigned off, unsigned dim, int t, unsigned elem, const char *tn)
+{
+  for (int i = 0; i < dbg_ncampi; i++) if (!strcmp(dbg_campi[i].tipo, tipo) && !strcmp(dbg_campi[i].campo, campo)) return;
+  if (dbg_ncampi < DBG_MAXT) { dbgcampo_t *c = &dbg_campi[dbg_ncampi++]; c->tipo = tipo; c->campo = campo; c->off = off; c->dim = dim; c->t = (char)t; c->elem = elem; c->tn = tn; }
+}
+void __svn(const char *tipo, const char *nome, long long v)
+{
+  for (int i = 0; i < dbg_nenum; i++) if (!strcmp(dbg_enum[i].tipo, tipo) && !strcmp(dbg_enum[i].nome, nome)) return;
+  if (dbg_nenum < DBG_MAXN) { dbg_enum[dbg_nenum].tipo = tipo; dbg_enum[dbg_nenum].nome = nome; dbg_enum[dbg_nenum].v = v; dbg_nenum++; }
+}
+#define DBG_C(T, f, t, tn) __svt(#T, #f, (unsigned)offsetof(T, f), (unsigned)sizeof(((T *)0)->f), t, 0, tn)
+#define DBG_CA(T, f, t, tn) __svt(#T, #f, (unsigned)offsetof(T, f), (unsigned)sizeof(((T *)0)->f), t, (unsigned)sizeof(((T *)0)->f[0]), tn)
+static void dbg_tipi_hal(void)
+{
+  DBG_C(GPIO_TypeDef, MODER, 'u', ""); DBG_C(GPIO_TypeDef, OTYPER, 'u', ""); DBG_C(GPIO_TypeDef, OSPEEDR, 'u', ""); DBG_C(GPIO_TypeDef, PUPDR, 'u', "");
+  DBG_C(GPIO_TypeDef, IDR, 'u', ""); DBG_C(GPIO_TypeDef, ODR, 'u', ""); DBG_C(GPIO_TypeDef, BSRR, 'u', ""); DBG_C(GPIO_TypeDef, LCKR, 'u', ""); DBG_CA(GPIO_TypeDef, AFR, 'u', "");
+  DBG_C(TIM_TypeDef, CR1, 'u', ""); DBG_C(TIM_TypeDef, CR2, 'u', ""); DBG_C(TIM_TypeDef, SMCR, 'u', ""); DBG_C(TIM_TypeDef, DIER, 'u', ""); DBG_C(TIM_TypeDef, SR, 'u', "");
+  DBG_C(TIM_TypeDef, EGR, 'u', ""); DBG_C(TIM_TypeDef, CCMR1, 'u', ""); DBG_C(TIM_TypeDef, CCMR2, 'u', ""); DBG_C(TIM_TypeDef, CCER, 'u', ""); DBG_C(TIM_TypeDef, CNT, 'u', "");
+  DBG_C(TIM_TypeDef, PSC, 'u', ""); DBG_C(TIM_TypeDef, ARR, 'u', ""); DBG_C(TIM_TypeDef, RCR, 'u', ""); DBG_C(TIM_TypeDef, CCR1, 'u', ""); DBG_C(TIM_TypeDef, CCR2, 'u', "");
+  DBG_C(TIM_TypeDef, CCR3, 'u', ""); DBG_C(TIM_TypeDef, CCR4, 'u', ""); DBG_C(TIM_TypeDef, BDTR, 'u', "");
+  DBG_C(USART_TypeDef, SR, 'u', ""); DBG_C(USART_TypeDef, DR, 'u', ""); DBG_C(USART_TypeDef, BRR, 'u', ""); DBG_C(USART_TypeDef, CR1, 'u', ""); DBG_C(USART_TypeDef, CR2, 'u', ""); DBG_C(USART_TypeDef, CR3, 'u', "");
+  DBG_C(ADC_TypeDef, SR, 'u', ""); DBG_C(ADC_TypeDef, CR1, 'u', ""); DBG_C(ADC_TypeDef, CR2, 'u', ""); DBG_C(ADC_TypeDef, SQR1, 'u', ""); DBG_C(ADC_TypeDef, SQR3, 'u', ""); DBG_C(ADC_TypeDef, DR, 'u', "");
+#ifdef HAL_TIM_MODULE_ENABLED
+  DBG_C(TIM_HandleTypeDef, Instance, 'p', "TIM_TypeDef"); DBG_C(TIM_HandleTypeDef, Init, 's', "TIM_Base_InitTypeDef"); DBG_C(TIM_HandleTypeDef, Channel, 'u', ""); DBG_C(TIM_HandleTypeDef, State, 'u', "");
+  DBG_C(TIM_Base_InitTypeDef, Prescaler, 'u', ""); DBG_C(TIM_Base_InitTypeDef, CounterMode, 'u', ""); DBG_C(TIM_Base_InitTypeDef, Period, 'u', ""); DBG_C(TIM_Base_InitTypeDef, ClockDivision, 'u', ""); DBG_C(TIM_Base_InitTypeDef, AutoReloadPreload, 'u', "");
+#endif
+#ifdef HAL_UART_MODULE_ENABLED
+  DBG_C(UART_HandleTypeDef, Instance, 'p', "USART_TypeDef"); DBG_C(UART_HandleTypeDef, Init, 's', "UART_InitTypeDef"); DBG_C(UART_HandleTypeDef, TxXferCount, 'u', ""); DBG_C(UART_HandleTypeDef, RxXferCount, 'u', ""); DBG_C(UART_HandleTypeDef, gState, 'u', "");
+  DBG_C(UART_InitTypeDef, BaudRate, 'u', ""); DBG_C(UART_InitTypeDef, WordLength, 'u', ""); DBG_C(UART_InitTypeDef, StopBits, 'u', ""); DBG_C(UART_InitTypeDef, Parity, 'u', ""); DBG_C(UART_InitTypeDef, Mode, 'u', "");
+#endif
+#ifdef HAL_ADC_MODULE_ENABLED
+  DBG_C(ADC_HandleTypeDef, Instance, 'p', "ADC_TypeDef"); DBG_C(ADC_HandleTypeDef, State, 'u', "");
+#endif
+}
+/* periferiche come variabili da osservare (non nell'elenco dei globali): "GPIOA", "TIM3", … */
+static const struct { const char *nome; uintptr_t ind; uint32_t dim; const char *tn; } dbg_perif[] = {
+  {"GPIOA", (uintptr_t)GPIOA, sizeof(GPIO_TypeDef), "GPIO_TypeDef"}, {"GPIOB", (uintptr_t)GPIOB, sizeof(GPIO_TypeDef), "GPIO_TypeDef"},
+  {"GPIOC", (uintptr_t)GPIOC, sizeof(GPIO_TypeDef), "GPIO_TypeDef"}, {"GPIOD", (uintptr_t)GPIOD, sizeof(GPIO_TypeDef), "GPIO_TypeDef"},
+  {"GPIOE", (uintptr_t)GPIOE, sizeof(GPIO_TypeDef), "GPIO_TypeDef"}, {"GPIOH", (uintptr_t)GPIOH, sizeof(GPIO_TypeDef), "GPIO_TypeDef"},
+  {"TIM1", (uintptr_t)TIM1, sizeof(TIM_TypeDef), "TIM_TypeDef"}, {"TIM2", (uintptr_t)TIM2, sizeof(TIM_TypeDef), "TIM_TypeDef"},
+  {"TIM3", (uintptr_t)TIM3, sizeof(TIM_TypeDef), "TIM_TypeDef"}, {"TIM4", (uintptr_t)TIM4, sizeof(TIM_TypeDef), "TIM_TypeDef"},
+  {"TIM5", (uintptr_t)TIM5, sizeof(TIM_TypeDef), "TIM_TypeDef"}, {"TIM9", (uintptr_t)TIM9, sizeof(TIM_TypeDef), "TIM_TypeDef"},
+  {"TIM10", (uintptr_t)TIM10, sizeof(TIM_TypeDef), "TIM_TypeDef"}, {"TIM11", (uintptr_t)TIM11, sizeof(TIM_TypeDef), "TIM_TypeDef"},
+  {"USART1", (uintptr_t)USART1, sizeof(USART_TypeDef), "USART_TypeDef"}, {"USART2", (uintptr_t)USART2, sizeof(USART_TypeDef), "USART_TypeDef"},
+  {"USART6", (uintptr_t)USART6, sizeof(USART_TypeDef), "USART_TypeDef"}, {"ADC1", (uintptr_t)ADC1, sizeof(ADC_TypeDef), "ADC_TypeDef"},
+};
+static uint32_t dbg_bpn[256], dbg_bpc[256];   /* "B id*n": si ferma dalla n-esima volta (contate da quando arriva B) */
+static volatile int dbg_ridump;
 void __svf(void *fn, const char *nome) { if (dbg_nfun < 512) { dbg_fun[dbg_nfun].fn = fn; dbg_fun[dbg_nfun].nome = nome; dbg_nfun++; } }
-void __svg(const char *nome, void *ind, unsigned dim, int tipo, unsigned elem)
-{ if (dbg_nglob < DBG_MAXG) { dbgvar_t *v = &dbg_glob[dbg_nglob++]; v->nome = nome; v->ind = ind; v->dim = dim; v->tipo = (char)tipo; v->elem = elem; } }
-void __svl(const char *nome, void *ind, unsigned dim, int tipo, unsigned elem)
+void __svg(const char *nome, void *ind, unsigned dim, int tipo, unsigned elem, const char *tn)
+{ if (dbg_nglob < DBG_MAXG) { dbgvar_t *v = &dbg_glob[dbg_nglob++]; v->nome = nome; v->ind = ind; v->dim = dim; v->tipo = (char)tipo; v->elem = elem; v->tn = tn; } }
+void __svl(const char *nome, void *ind, unsigned dim, int tipo, unsigned elem, const char *tn)
 {
   if (dbg_prof < 1 || dbg_prof > DBG_MAXF) return;
   dbgframe_t *f = &dbg_st[dbg_prof - 1];
   int i;
   for (i = 0; i < f->nloc && strcmp(f->loc[i].nome, nome) != 0; i++) ;
   if (i == f->nloc) { if (f->nloc >= DBG_MAXL) return; f->nloc++; }
-  dbgvar_t *v = &f->loc[i]; v->nome = nome; v->ind = ind; v->dim = dim; v->tipo = (char)tipo; v->elem = elem;
+  dbgvar_t *v = &f->loc[i]; v->nome = nome; v->ind = ind; v->dim = dim; v->tipo = (char)tipo; v->elem = elem; v->tn = tn;
 }
 /* entrata in una funzione dell'utente (la registra per il nome) e uscita, con __attribute__((cleanup)) */
 int __sve(void *fn, const char *nome)
@@ -2361,23 +2423,34 @@ static void dbg_var(const char *dove, int f, const dbgvar_t *v)
   static const char hx[] = "0123456789abcdef";
   char b[700];
   uint32_t n = v->dim > 256 ? 256 : v->dim;
-  int o = snprintf(b, 200, "Y v %s %d %s %c %u %u ", dove, f, v->nome, v->tipo ? v->tipo : 's', (unsigned)v->elem, (unsigned)v->dim);
+  int o = snprintf(b, 200, "Y v %s %d %s %c %u %u %lu %s ", dove, f, v->nome, v->tipo ? v->tipo : 's', (unsigned)v->elem, (unsigned)v->dim, (unsigned long)(uintptr_t)v->ind, v->tn && v->tn[0] ? v->tn : "-");
   const uint8_t *p = (const uint8_t *)v->ind;
   for (uint32_t i = 0; i < n; i++) { b[o++] = hx[p[i] >> 4]; b[o++] = hx[p[i] & 15]; }
   b[o] = 0;
   emit("%s", b);
 }
-static void dbg_ferma(uint32_t id, const char *perche)
+static void dbg_stato(uint32_t id, const char *perche)
 {
   int nf = dbg_prof > DBG_MAXF ? DBG_MAXF : dbg_prof;
+  if (!dbg_tipi_mandati) {
+    dbg_tipi_mandati = 1;
+    dbg_tipi_hal();
+    for (int i = 0; i < dbg_ncampi; i++) { const dbgcampo_t *c = &dbg_campi[i]; emit("Y t %s %s %u %u %c %u %s", c->tipo, c->campo, (unsigned)c->off, (unsigned)c->dim, c->t, (unsigned)c->elem, c->tn && c->tn[0] ? c->tn : "-"); }
+    for (int i = 0; i < dbg_nenum; i++) emit("Y n %s %s %lld", dbg_enum[i].tipo, dbg_enum[i].nome, dbg_enum[i].v);
+  }
   emit("Y stop %u %s %d", (unsigned)id, perche, dbg_prof);
   for (int i = nf - 1; i >= 0; i--) emit("Y f %d %s %u", i, dbg_nome(dbg_st[i].fn), (unsigned)dbg_st[i].riga);
   for (int i = nf - 1; i >= 0; i--) for (int j = 0; j < dbg_st[i].nloc; j++) dbg_var("l", i, &dbg_st[i].loc[j]);
   for (int j = 0; j < dbg_nglob; j++) dbg_var("g", 0, &dbg_glob[j]);
+  for (unsigned j = 0; j < sizeof dbg_perif / sizeof dbg_perif[0]; j++) { dbgvar_t v = { dbg_perif[j].nome, (void *)dbg_perif[j].ind, dbg_perif[j].dim, 's', 0, dbg_perif[j].tn }; dbg_var("r", 0, &v); }
   emit("Y fine");
   out_flush();
+}
+static void dbg_ferma(uint32_t id, const char *perche)
+{
+  dbg_stato(id, perche);
   dbg_fermo = 1;
-  while (dbg_fermo) { sv_sleep(25); read_commands(); }
+  while (dbg_fermo) { sv_sleep(25); read_commands(); if (dbg_ridump) { dbg_ridump = 0; dbg_stato(id, perche); } }
   next_deadline = sv_now();
   emit("Y via");
 }
@@ -2391,7 +2464,7 @@ void __svr(unsigned id)
     case 2: stop = dbg_prof <= dbg_rif; break;
     case 3: stop = dbg_prof < dbg_rif; break;
   }
-  if (!stop) for (int i = 0; i < dbg_nbp; i++) if (dbg_bp[i] == id) { stop = 2; break; }
+  if (!stop) for (int i = 0; i < dbg_nbp; i++) if (dbg_bp[i] == id) { if (++dbg_bpc[i] >= dbg_bpn[i]) stop = 2; break; }
   if (!stop) return;
   dbg_dentro = 1;
   dbg_ferma(id, stop == 2 ? "bp" : dbg_modo == 4 ? "pausa" : "passo");
@@ -2403,7 +2476,30 @@ static void dbg_comando(char *line)
   if (line[0] == 'B') {
     char *p = line + 1;
     dbg_nbp = 0;
-    while (*p && dbg_nbp < 256) { while (*p == ' ') p++; if (!*p) break; dbg_bp[dbg_nbp++] = (uint32_t)strtoul(p, &p, 10); }
+    while (*p && dbg_nbp < 256) {
+      while (*p == ' ') p++;
+      if (!*p) break;
+      dbg_bp[dbg_nbp] = (uint32_t)strtoul(p, &p, 10);
+      dbg_bpn[dbg_nbp] = *p == '*' ? (uint32_t)strtoul(p + 1, &p, 10) : 1;
+      dbg_bpc[dbg_nbp] = 0;
+      dbg_nbp++;
+      while (*p && *p != ' ') p++;
+    }
+  } else if (line[0] == 'Z' && line[2] == 'w') {
+    /* scrive i byte solo se stanno tutti dentro una variabile registrata (globale, locale o periferica) */
+    char *p = line + 3;
+    uintptr_t a = (uintptr_t)strtoul(p, &p, 10);
+    while (*p == ' ') p++;
+    uint8_t buf[16]; uint32_t n = 0;
+    while (n < 16 && isxdigit((unsigned char)p[0]) && isxdigit((unsigned char)p[1])) { char h[3] = { p[0], p[1], 0 }; buf[n++] = (uint8_t)strtoul(h, NULL, 16); p += 2; }
+    int ok = 0;
+    const dbgvar_t *vv[DBG_MAXG + DBG_MAXF * DBG_MAXL]; int nv = 0;
+    for (int j = 0; j < dbg_nglob; j++) vv[nv++] = &dbg_glob[j];
+    for (int i = 0; i < dbg_prof && i < DBG_MAXF; i++) for (int j = 0; j < dbg_st[i].nloc; j++) vv[nv++] = &dbg_st[i].loc[j];
+    for (int j = 0; j < nv && !ok; j++) { uintptr_t b = (uintptr_t)vv[j]->ind; if (a >= b && a + n <= b + vv[j]->dim) ok = 1; }
+    for (unsigned j = 0; j < sizeof dbg_perif / sizeof dbg_perif[0] && !ok; j++) if (a >= dbg_perif[j].ind && a + n <= dbg_perif[j].ind + dbg_perif[j].dim) ok = 1;
+    if (ok && n) { memcpy((void *)a, buf, n); dbg_ridump = 1; }
+    else emit("L Non scrivo: l'indirizzo non è dentro una variabile");
   } else if (line[0] == 'Z') {
     char c = line[2];
     if (c == 'c') { dbg_modo = 0; dbg_fermo = 0; }

@@ -15,14 +15,18 @@ const E = {
 // debug (debug.js): breakpoint nella colonna dei numeri di riga e riga corrente evidenziata.
 // Il contenuto lo decide debug.js (window.SVdbg): qui solo il disegno e il clic.
 const aggiornaDbg = CM.StateEffect.define();
-class PuntoBP extends CM.GutterMarker { constructor(ok) { super(); this.ok = ok; } eq(o) { return o.ok === this.ok; } toDOM() { const d = document.createElement('span'); d.className = 'cm-bp' + (this.ok ? '' : ' cm-bp-no'); d.title = this.ok ? 'Breakpoint (clic per toglierlo)' : 'Breakpoint su una riga senza istruzioni: si ferma alla prima istruzione dopo'; return d; } }
-const BP_SI = new PuntoBP(true), BP_NO = new PuntoBP(false);
+// ok: true, false (riga senza istruzioni) o 'cond' (con condizione o "dalla volta n", punto H)
+class PuntoBP extends CM.GutterMarker { constructor(ok) { super(); this.ok = ok; } eq(o) { return o.ok === this.ok; } toDOM() { const d = document.createElement('span'); d.className = 'cm-bp' + (this.ok === 'cond' ? ' cm-bp-cond' : this.ok ? '' : ' cm-bp-no'); d.title = this.ok === 'cond' ? 'Breakpoint con condizione (clic destro per cambiarla, clic per toglierlo)' : this.ok ? 'Breakpoint (clic per toglierlo, clic destro per una condizione)' : 'Breakpoint su una riga senza istruzioni: si ferma alla prima istruzione dopo'; return d; } }
+const BP_SI = new PuntoBP(true), BP_NO = new PuntoBP(false), BP_COND = new PuntoBP('cond');
 const dbgGutter = () => CM.gutter({
   class: 'cm-bp-gutter',
-  lineMarker(view, line) { const d = window.SVdbg; if (!d || !E.cur) return null; const n = view.state.doc.lineAt(line.from).number, st = d.statoBP(E.cur, n); return st === 1 ? BP_SI : st === 2 ? BP_NO : null; },
+  lineMarker(view, line) { const d = window.SVdbg; if (!d || !E.cur) return null; const n = view.state.doc.lineAt(line.from).number, st = d.statoBP(E.cur, n); return st === 1 ? BP_SI : st === 2 ? BP_NO : st === 3 ? BP_COND : null; },
   lineMarkerChange: u => u.transactions.some(t => t.effects.some(e => e.is(aggiornaDbg))),
   initialSpacer: () => BP_SI,
-  domEventHandlers: { mousedown(view, line) { const d = window.SVdbg; if (!d || !E.cur) return false; d.cambiaBP(E.cur, view.state.doc.lineAt(line.from).number); return true; } },
+  domEventHandlers: {
+    mousedown(view, line, ev) { if (ev.button === 2) return false; const d = window.SVdbg; if (!d || !E.cur) return false; d.cambiaBP(E.cur, view.state.doc.lineAt(line.from).number); return true; },
+    contextmenu(view, line, ev) { const d = window.SVdbg; if (!d || !E.cur) return false; ev.preventDefault(); d.opzioniBP(E.cur, view.state.doc.lineAt(line.from).number); return true; },
+  },
 });
 const rigaCorrente = CM.StateField.define({
   create: () => CM.Decoration.none,
@@ -53,7 +57,7 @@ function extensions(ro) {
       ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap, CM.indentWithTab,
     ]),
     CM.EditorView.updateListener.of(u => { if (u.docChanged) renderTabs(); }),
-    CM.EditorView.theme({ '.cm-bp-gutter .cm-gutterElement': { cursor: 'pointer', padding: '0 2px 0 4px' }, '.cm-bp': { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: '#e53935', boxShadow: '0 0 0 1px #0004' }, '.cm-bp-no': { background: 'transparent', border: '2px solid #e53935', width: '7px', height: '7px' }, '.cm-riga-dbg': { background: 'rgba(255, 196, 0, .22)', outline: '1px solid rgba(255, 196, 0, .55)' } }),
+    CM.EditorView.theme({ '.cm-bp-gutter .cm-gutterElement': { cursor: 'pointer', padding: '0 2px 0 4px' }, '.cm-bp': { display: 'inline-block', width: '9px', height: '9px', borderRadius: '50%', background: '#e53935', boxShadow: '0 0 0 1px #0004' }, '.cm-bp-no': { background: 'transparent', border: '2px solid #e53935', width: '7px', height: '7px' }, '.cm-bp-cond': { background: '#fb8c00', borderRadius: '2px' }, '.cm-riga-dbg': { background: 'rgba(255, 196, 0, .22)', outline: '1px solid rgba(255, 196, 0, .55)' } }),
     CM.EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace', fontSize: '12.5px' } }),
   ];
 }

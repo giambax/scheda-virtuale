@@ -538,6 +538,17 @@ body[data-vista="breadboard"] .vista-btn.on { background: var(--panel); }
 :root { --sch-carta: #fbfbf8; --sch-tratto: #1d2430; --sch-aperto: #c62828; --sch-etichetta: #0a5bb5; }
 :root[data-theme="dark"] { --sch-carta: #12161c; --sch-tratto: #dfe5ee; --sch-aperto: #ff6b6b; --sch-etichetta: #7cb4ff; }
 .sch-filo { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+/* punto K: fili e simboli di alimentazione modificabili */
+.sch-gambo { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.sch-filo { cursor: pointer; }
+.sch-filo.sch-sel { stroke-width: 3; }
+.sch-alim { cursor: move; }
+.sch-alim.sch-sel { color: var(--accent); }
+#sch-svg.filo, #sch-svg.filo * { cursor: crosshair; }
+.sch-barra button.on { background: var(--accent); color: #fff; }
+#sch-colori button { width: 18px; height: 18px; border-radius: 50%; padding: 0; border: 1px solid #0006; }
+#sch-colori button[data-col=""] { width: auto; border-radius: 9px; padding: 0 6px; font-size: 11px; background: var(--panel, #333); color: inherit; }
+#sch-colori button.on { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sch-sim { cursor: move; }
 .sch-sim.sch-sel { color: var(--accent); }
 .sch-lab text { font-family: sans-serif !important; }

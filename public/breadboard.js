@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-25i';
+import * as K from './circuito.js?v=2026-11-25k';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -1573,7 +1573,8 @@ function palette() {
           const svg = $('#bb-svg'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
           const q = pt.matrixTransform(svg.getScreenCTM().inverse()), g = griglia([q.x / P, q.y / P]);
           const rot = B.posaRot || 0; annullaComando(); aggiungi(t, g[0], g[1], rot);
-        } else annullaComando();
+        } else if (document.body.dataset.vista === 'schema' && window.SVschema && window.SVschema.posa(t, e.clientX, e.clientY)) annullaComando();   // posato nello schema (punto K)
+        else annullaComando();
       };
       document.addEventListener('pointermove', muovi); document.addEventListener('pointerup', su);
     });
@@ -1679,4 +1680,18 @@ function monta() {
 }
 monta();
 // per le prove (strumenti/prova-breadboard-browser.mjs) e per la console
-Object.assign(B, { elimina, copia, incolla, annulla, ripeti, adatta, zoom, scegli, sagomaPosa, duplica: () => { copia(); incolla(); }, togliAngolo: () => { if (!B.filo) return; if (B.filo.pts.length > 1) { B.filo.pts.pop(); disegnaFiloInCorso(); } else annullaComando(); }, apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });
+// posto libero sul banco per un componente messo dallo schema (punto K): sotto la Nucleo e le breadboard,
+// lontano dai fori (così non si collega per sbaglio); i collegamenti li fanno i fili tirati nello schema
+function postoLibero(tipo) {
+  const y0 = Math.max(K.NUCLEO.y + K.NUCLEO.h, K.BB.w ? K.BB.y + K.BB.h : 0) + 8;
+  const occupato = (x0, y0_, x1, y1) => (B.ingombri || []).some(r => r.x0 < x1 && r.x1 > x0 && r.y0 < y1 && r.y1 > y0_) ||
+    B.bb.comps.some(c => K.piediniXY(c).some(p => p.x >= x0 && p.x <= x1 && p.y >= y0_ && p.y <= y1)) ||
+    B.bb.wires.some(w => w.p.some(q => q[0] >= x0 && q[0] <= x1 && q[1] >= y0_ && q[1] <= y1));
+  const finto = { id: '_', type: tipo, x: 0, y: 0, rot: 0, opt: Object.fromEntries(K.OPZIONI[tipo].map(([k, v]) => [k, v])) };
+  const pp = K.piediniXY(finto), w = Math.max(4, ...pp.map(p => p.x)) + 4;
+  for (let y = y0; y < y0 + 200; y += 10) for (let x = 0; x < 200; x += 2) {
+    if (!occupato(x - 3, y - 7, x + w, y + 7) && !pp.some(p => K.FORI.has(K.chiave(x + p.x, y + p.y)))) return [x, y];
+  }
+  return [0, y0];
+}
+Object.assign(B, { aggiungi, postoLibero, elimina, copia, incolla, annulla, ripeti, adatta, zoom, scegli, sagomaPosa, duplica: () => { copia(); incolla(); }, togliAngolo: () => { if (!B.filo) return; if (B.filo.pts.length > 1) { B.filo.pts.pop(); disegnaFiloInCorso(); } else annullaComando(); }, apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });

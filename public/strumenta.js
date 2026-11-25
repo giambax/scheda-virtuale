@@ -8,6 +8,9 @@
 // Non serve un parser C completo: basta riconoscere dove comincia un'istruzione. Dove sarebbe rischioso
 // (corpo di if/for/while/else senza graffe, case, etichette, intestazioni dei for) non si mette niente:
 // quella riga non è un punto di arresto (il breakpoint si sposta alla riga dopo che lo è).
+// Punto H (25/11/2026): anche i parametri delle funzioni (registrati all'entrata), il nome del tipo di ogni variabile
+// e, in fondo al file, i campi delle struct/union definite nel file (__svt, con offsetof) e i valori degli enum
+// (__svn): così la pagina mostra le strutture campo per campo e gli enum per nome.
 // Funziona anche in Node (strumenti/prova-strumenta.mjs).
 
 const KW_CTRL = new Set(['if', 'for', 'while', 'switch']);
@@ -54,10 +57,20 @@ function gettoni(src) {
   return out;
 }
 
+// tipi definiti nel file (typedef struct/enum/…): nome → tipo per la pagina ('s' struttura, 'i' enum, …)
+let TIPI_UTENTE = new Map();
+const tipoBase = t => TIPI_BASE.test(t) || TIPI_UTENTE.has(t);
+// nome del tipo (per la pagina: campi delle strutture, nomi degli enum): l'ultimo identificatore che non è un qualificatore
+function nomeTipo(tipi) {
+  for (let i = tipi.length - 1; i >= 0; i--) if (!QUALIF.has(tipi[i]) || /^(struct|union|enum)$/.test(tipi[i]) && false) { if (!/^(struct|union|enum)$/.test(tipi[i])) return tipi[i]; }
+  return '';
+}
 // tipo per la pagina: f float, d double, u senza segno, i con segno, b bool, c char, p puntatore, s struttura/altro
 function tipoDi(tipi, puntatore) {
   if (puntatore) return 'p';
   const s = tipi.join(' ');
+  const ut = tipi.find(t => TIPI_UTENTE.has(t));
+  if (ut) return TIPI_UTENTE.get(ut);
   if (/\bfloat\b/.test(s)) return 'f';
   if (/\bdouble\b/.test(s)) return 'd';
   if (/\b(_Bool|bool)\b/.test(s)) return 'b';
@@ -70,15 +83,15 @@ function tipoDi(tipi, puntatore) {
 function dichiarazione(g) {
   let i = 0;
   const tipi = [];
-  while (i < g.length && g[i].k === 'id' && (QUALIF.has(g[i].t) || TIPI_BASE.test(g[i].t) || (tipi.some(t => t === 'struct' || t === 'union' || t === 'enum') && tipi.length && !TIPI_BASE.test(tipi[tipi.length - 1]) && !QUALIF.has(g[i].t) && tipi[tipi.length - 1] !== g[i].t && /^(struct|union|enum)$/.test(tipi[tipi.length - 1])))) { tipi.push(g[i].t); i++; }
-  if (!tipi.some(t => TIPI_BASE.test(t) || /^(struct|union|enum)$/.test(t))) return null;
+  while (i < g.length && g[i].k === 'id' && (QUALIF.has(g[i].t) || (tipoBase(g[i].t) && !tipi.some(tipoBase)) || (tipi.some(t => t === 'struct' || t === 'union' || t === 'enum') && tipi.length && !tipoBase(tipi[tipi.length - 1]) && !QUALIF.has(g[i].t) && tipi[tipi.length - 1] !== g[i].t && /^(struct|union|enum)$/.test(tipi[tipi.length - 1])))) { tipi.push(g[i].t); i++; }
+  if (!tipi.some(t => tipoBase(t) || /^(struct|union|enum)$/.test(t))) return null;
   if (tipi.includes('extern') || tipi.includes('typedef') || tipi.includes('register')) return null;
   const out = [];
   let prof = 0, inizio = true, punt = false, nome = null, arr = false;
   for (; i <= g.length; i++) {
     const x = g[i];
     if (!x || (prof === 0 && x.t === ',')) {
-      if (nome) out.push({ nome, tipo: tipoDi(tipi, punt && !arr), arr, punt });
+      if (nome) out.push({ nome, tipo: tipoDi(tipi, punt && !arr), arr, punt, tn: nomeTipo(tipi) });
       inizio = true; punt = false; nome = null; arr = false;
       continue;
     }
@@ -93,15 +106,65 @@ function dichiarazione(g) {
   }
   return out.length ? out : null;
 }
-const reg = (fn, v) => `${fn}("${v.nome}",(void*)&${v.nome},(unsigned)sizeof(${v.nome}),'${v.tipo}',(unsigned)${v.arr ? `sizeof(${v.nome}[0])` : 0});`;
+const reg = (fn, v) => `${fn}("${v.nome}",(void*)&${v.nome},(unsigned)sizeof(${v.nome}),'${v.tipo}',(unsigned)${v.arr ? `sizeof(${v.nome}[0])` : 0},"${v.tn || ''}");`;
+// struct/union/enum definite nel file (fuori dai #if): { struct: [{ nome, espr, campi }], enum: [{ nome, valori }] }
+function tipiDelFile(g) {
+  const out = { struct: [], enum: [] };
+  let prof = 0;
+  for (let k = 0; k < g.length; k++) {
+    const x = g[k];
+    if (x.t === '{') { prof++; continue; }
+    if (x.t === '}') { prof--; continue; }
+    if (prof || x.cond > 0 || !/^(struct|union|enum)$/.test(x.t)) continue;
+    const td = g[k - 1] && g[k - 1].t === 'typedef', tag = g[k + 1] && g[k + 1].k === 'id' ? g[k + 1].t : null;
+    const ap = tag ? k + 2 : k + 1;
+    if (!g[ap] || g[ap].t !== '{') continue;
+    let j = ap + 1, d = 1;
+    for (; j < g.length && d; j++) { if (g[j].t === '{') d++; else if (g[j].t === '}') d--; }
+    const corpo = g.slice(ap + 1, j - 1), dopo = [];
+    let e = j;
+    for (; e < g.length && g[e].t !== ';'; e++) dopo.push(g[e]);
+    const nomeTd = td && dopo.length === 1 && dopo[0].k === 'id' ? dopo[0].t : null;
+    const nome = nomeTd || tag, espr = nomeTd || (tag && `${x.t} ${tag}`);
+    if (!nome || !espr) continue;
+    if (x.t === 'enum') {
+      const valori = [];
+      let pr = 0, inizio = true;
+      for (const t of corpo) { if (t.t === '(') pr++; else if (t.t === ')') pr--; else if (pr === 0 && t.t === ',') inizio = true; else if (inizio && t.k === 'id') { valori.push(t.t); inizio = false; } else inizio = false; }
+      out.enum.push({ nome, valori });
+      if (nomeTd) TIPI_UTENTE.set(nomeTd, 'i');
+    } else {
+      out.struct.push({ nome, espr, corpo });
+      if (nomeTd) TIPI_UTENTE.set(nomeTd, 's');
+    }
+  }
+  // campi (dopo, così un campo può essere di un tipo definito prima)
+  for (const st of out.struct) {
+    st.campi = [];
+    let pezzo = [], pr = 0;
+    for (const t of [...st.corpo, { t: ';' }]) {
+      if (t.t === '{' || t.t === '(') pr++; else if (t.t === '}' || t.t === ')') pr--;
+      if (pr === 0 && t.t === ';') {
+        if (pezzo.length && !pezzo.some(q => q.t === ':' || q.t === '{')) for (const v of dichiarazione(pezzo) || []) st.campi.push(v);
+        pezzo = [];
+      } else pezzo.push(t);
+    }
+    delete st.corpo;
+  }
+  return out;
+}
+const regCampo = (st, v) => `__svt("${st.nome}","${v.nome}",(unsigned)__builtin_offsetof(${st.espr},${v.nome}),(unsigned)sizeof(((${st.espr}*)0)->${v.nome}),'${v.tipo}',(unsigned)${v.arr ? `sizeof(((${st.espr}*)0)->${v.nome}[0])` : 0},"${v.tn || ''}");`;
 
 // dichiarazioni per i file preparati (build.js le passa con -include: niente testo in più in cima al file,
 // che può cominciare con una direttiva del preprocessore)
-export const PROLOGO = 'extern void __svr(unsigned);\nextern void __svl(const char*,void*,unsigned,int,unsigned);\nextern int __sve(void*,const char*);\nextern void __svx(int*);\n';
+export const PROLOGO = 'extern void __svr(unsigned);\nextern void __svl(const char*,void*,unsigned,int,unsigned,const char*);\nextern int __sve(void*,const char*);\nextern void __svx(int*);\n' +
+  'extern void __svt(const char*,const char*,unsigned,unsigned,int,unsigned,const char*);\nextern void __svn(const char*,const char*,long long);\n';
 
 // src: testo del file; idFile: numero del file (0, 1, …) → { testo, righe: [righe con __svr], funzioni: [nomi], globali: [nomi] }
 export function strumenta(src, idFile) {
   const g = gettoni(src);
+  TIPI_UTENTE = new Map();
+  const tipiFile = tipiDelFile(g);
   const ins = [];                      // [posizione, testo] da inserire
   const righe = new Set(), funzioni = [], globali = [];
   const graffe = [];                   // 'c' codice, 'd' dati (inizializzatori, struct), 'f' corpo di funzione
@@ -152,8 +215,15 @@ export function strumenta(src, idFile) {
           const nome = st[j - 1];
           if (nome && nome.k === 'id' && !st.some(t => t.t === '=')) {
             funzioni.push(nome.t); graffe.push('f'); aspetta = 'si'; fileStmt = [];
+            // parametri: come variabili locali, registrati appena si entra (un array come parametro è un puntatore)
+            const par = [];
+            let pz = [], pd = 0;
+            for (const t of [...st.slice(j + 1, -1), { t: ',' }]) {
+              if (t.t === '(' || t.t === '[') pd++; else if (t.t === ')' || t.t === ']') pd--;
+              if (pd === 0 && t.t === ',') { const d = pz.length ? dichiarazione(pz) : null; if (d) for (const v of d) par.push(v.arr ? { ...v, tipo: 'p', arr: false } : v); pz = []; } else pz.push(t);
+            }
             // entrata nella funzione e uscita (da qualsiasi return) con __attribute__((cleanup)): stack e profondità
-            ins.push([x.fin, `__attribute__((cleanup(__svx))) int __svk = __sve((void*)${nome.t},"${nome.t}");`]);
+            ins.push([x.fin, `__attribute__((cleanup(__svx))) int __svk = __sve((void*)${nome.t},"${nome.t}");` + par.map(v => reg('__svl', v)).join('')]);
             continue;
           }
         }
@@ -201,7 +271,9 @@ export function strumenta(src, idFile) {
   ins.sort((a, b) => b[0] - a[0]);
   let out = src;
   for (const [p, t] of ins) out = out.slice(0, p) + t + out.slice(p);
-  const coda = globali.map(v => reg('__svg', v)).join('');
-  out = out + `\n__attribute__((constructor)) static void __svreg_${idFile}(void){extern void __svg(const char*,void*,unsigned,int,unsigned);${coda}}\n`;
+  const coda = globali.map(v => reg('__svg', v)).join('') +
+    tipiFile.struct.flatMap(st => st.campi.map(v => regCampo(st, v))).join('') +
+    tipiFile.enum.flatMap(en => en.valori.map(v => `__svn("${en.nome}","${v}",(long long)(${v}));`)).join('');
+  out = out + `\n__attribute__((constructor)) static void __svreg_${idFile}(void){extern void __svg(const char*,void*,unsigned,int,unsigned,const char*);${coda}}\n`;
   return { testo: out, prologo: PROLOGO, righe: [...righe].sort((a, b) => a - b), funzioni, globali: globali.map(v => v.nome) };
 }

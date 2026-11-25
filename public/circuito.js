@@ -243,12 +243,27 @@ export function pulisciBreadboard(d) {
   // (più "nucleo" per il blocco della scheda); se mancano si dispongono da soli
   if (d.schema && typeof d.schema === 'object' && !Array.isArray(d.schema)) {
     const ok = new Set([...out.comps.map(c => c.id), 'nucleo']), sch = {};
-    for (const [k, v] of Object.entries(d.schema).slice(0, MAX_COMP + 1)) {
-      if (!ok.has(k) || !Array.isArray(v)) continue;
+    for (const [k, v] of Object.entries(d.schema).slice(0, 3 * MAX_COMP + 1)) {
+      // anche i simboli di massa e alimentazione spostati a mano (punto K): "g:<componente>:<piedino>"
+      const g = /^g:(\w{1,24}):([\w+\-]{1,8})$/.exec(k);
+      if (!(ok.has(k) || (g && ok.has(g[1]))) || !Array.isArray(v)) continue;
       sch[k] = [Math.round(num(v[0], -500, 1500, 0)), Math.round(num(v[1], -500, 1500, 0)), Math.round(num(v[2], 0, 3, 0))];
     }
     if (Object.keys(sch).length) out.schema = sch;
   }
+  // fili dello schema modificati a mano (punto K): { "<a>~<b>": { p: [[x, y]…] percorso, col: colore } }
+  if (d.schemaFili && typeof d.schemaFili === 'object' && !Array.isArray(d.schemaFili)) {
+    const sf = {};
+    for (const [k, v] of Object.entries(d.schemaFili).slice(0, MAX_FILI)) {
+      if (!/^[\w.:+\-]{1,40}~[\w.:+\-]{1,40}$/.test(k) || !v || typeof v !== 'object') continue;
+      const e = {};
+      if (Array.isArray(v.p) && v.p.length >= 2) e.p = v.p.slice(0, MAX_PIEGHE + 2).map(q => [Math.round(num(q && q[0], -500, 1500, 0)), Math.round(num(q && q[1], -500, 1500, 0))]);
+      if (COLORI_FILO.includes(v.col)) e.col = v.col;
+      if (e.p || e.col) sf[k] = e;
+    }
+    if (Object.keys(sf).length) out.schemaFili = sf;
+  }
+  if (d.schemaColori) out.schemaColori = 1;     // fili dello schema con i colori della breadboard
   return out;
 }
 // "4k7" → 4700, "1,5k" → 1500, "100n" → 1e-7, "2M2" → 2.2e6

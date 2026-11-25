@@ -9,8 +9,8 @@
 // Il contenuto di un link è un DATO scritto da chiunque: qui si controlla tutto (dimensioni,
 // nomi dei file, tipi) e niente di quello che arriva viene mai usato come HTML.
 import { deflateSync, Inflate, strToU8, strFromU8 } from '../vendor/fflate/esm/browser.js';
-import { parseCproject } from './build.js?v=2026-11-25i';
-import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-25i';
+import { parseCproject } from './build.js?v=2026-11-25k';
+import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-25k';
 
 export const LINK_MAX = 400000;          // caratteri dopo # che si accettano
 const DATI_MAX = 3 * 1024 * 1024;        // JSON scompresso (contro gli "zip bomb")

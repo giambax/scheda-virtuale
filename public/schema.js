@@ -72,7 +72,7 @@ function costruisci() {
   const items = [];
   const nuc = simboloNucleo(pinsMcu);
   items.push({ id: 'nucleo', sym: nuc, fun: p => p, label: '' });
-  for (const cc of net.comps) items.push({ id: cc.c.id, c: cc.c, sym: simbolo(cc.c), cc, label: cc.c.label || '' });
+  for (const cc of net.comps) if (!K.tavola(cc.c)) items.push({ id: cc.c.id, c: cc.c, sym: simbolo(cc.c), cc, label: cc.c.label || '' });
   // nodo di ogni piedino del simbolo
   const nodoDi = (it, f) => {
     if (it.id === 'nucleo') { const n = nodi.find(n => n.pins.includes(f)); return n ? n.i : -1; }

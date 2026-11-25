@@ -6,7 +6,7 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-25h';
+import * as K from './circuito.js?v=2026-11-25i';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -31,7 +31,7 @@ window.BB = B;
 // Disegno statico: Nucleo + breadboard
 const svgEl = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (parent) parent.appendChild(e); return e; };
 function disegnoStatico() {
-  const N = K.NUCLEO, BB_ = K.BB;
+  const N = K.NUCLEO;
   let s = '';
   // Nucleo
   s += `<rect x="${N.x * P - 26}" y="${N.y * P}" width="${(N.w + 1) * P + 26}" height="${N.h * P}" rx="6" fill="#f2f2f2" stroke="#9aa0a6"/>`;
@@ -49,14 +49,7 @@ function disegnoStatico() {
   s += `<rect x="${0.5 * P}" y="${11.5 * P}" width="${2 * P}" height="${19 * P}" fill="#222"/><rect x="${26.5 * P}" y="${11.5 * P}" width="${2 * P}" height="${19 * P}" fill="#222"/>`;
   s += `<rect x="${4.5 * P}" y="${13.5 * P}" width="${P}" height="${8 * P}" fill="#222"/><rect x="${4.5 * P}" y="${22.5 * P}" width="${P}" height="${6 * P}" fill="#222"/>`;
   s += `<rect x="${23.5 * P}" y="${9.5 * P}" width="${P}" height="${10 * P}" fill="#222"/><rect x="${23.5 * P}" y="${20.5 * P}" width="${P}" height="${8 * P}" fill="#222"/>`;
-  // breadboard
-  const bx = BB_.x * P, by = BB_.y * P;
-  s += `<rect x="${bx}" y="${by - 0.8 * P}" width="${BB_.w * P}" height="${(BB_.h + 0.6) * P}" rx="6" fill="#f7f5ee" stroke="#cfcab8"/>`;
-  s += `<rect x="${bx + 2}" y="${by + 8.2 * P}" width="${BB_.w * P - 4}" height="${0.6 * P}" fill="#e4e0d2"/>`;
-  for (const [dy, col] of [[-0.5, '#d33'], [1.5, '#26c'], [16.5, '#d33'], [18.5, '#26c']]) s += `<line x1="${bx + 3 * P}" x2="${bx + 63 * P}" y1="${by + dy * P}" y2="${by + dy * P}" stroke="${col}" stroke-width="1"/>`;
-  for (const [dy, t] of [[0, '+'], [1, '−'], [17, '+'], [18, '−']]) s += `<text x="${bx + 1.6 * P}" y="${by + dy * P + 3}" font-size="9" text-anchor="middle" fill="${t === '+' ? '#d33' : '#26c'}" font-family="sans-serif">${t}</text>`;
-  'abcdefghij'.split('').forEach((r, i) => s += `<text x="${bx + 1 * P}" y="${by + (i < 5 ? 3 + i : 5 + i) * P + 3}" font-size="7" text-anchor="middle" fill="#888" font-family="sans-serif">${r}</text>`);
-  for (let c = 1; c <= 63; c += c === 1 ? 4 : 5) s += `<text x="${bx + (1 + c) * P}" y="${by + 2.3 * P}" font-size="6.5" text-anchor="middle" fill="#888" font-family="sans-serif">${c}</text>`;
+  // le breadboard sono componenti "tavola" (punto J): si disegnano con gli altri, sotto (tavolaSVG)
   // nomi dei pin accanto ai connettori: STM32 sui Morpho (CN7, CN10), Arduino + STM32 sugli Arduino
   // (CN5, CN6, CN8, CN9). Allontanando la vista spariscono (classe "lontano"); il dettaglio resta nella riga in basso.
   s += '<g id="bb-nomi-pin" font-family="ui-monospace, Menlo, monospace" fill="#2b3440">';
@@ -79,8 +72,8 @@ function disegnoStatico() {
     s += `<text x="${(f.x + lato * 0.5) * P}" y="${f.y * P + fs * 0.36}" font-size="${fs}" text-anchor="${lato < 0 ? 'end' : 'start'}"${pw}>${esc(t)}</text>`;
   }
   s += '</g>';
-  // fori
-  for (const f of K.FORI.values()) s += `<rect x="${f.x * P - 2.2}" y="${f.y * P - 2.2}" width="4.4" height="4.4" rx="0.8" fill="${f.id.startsWith('CN') ? '#c8a85a' : '#3d3d3d'}"/>`;
+  // fori dei connettori (quelli delle breadboard li disegna tavolaSVG)
+  for (const f of K.FORI.values()) if (f.id.startsWith('CN')) s += `<rect x="${f.x * P - 2.2}" y="${f.y * P - 2.2}" width="4.4" height="4.4" rx="0.8" fill="${f.id.startsWith('CN') ? '#c8a85a' : '#3d3d3d'}"/>`;
   return s;
 }
 
@@ -95,7 +88,29 @@ function bandeResistore(r) {
 function cifraSVG(id, d, x, y, sc) {
   return `<g transform="translate(${x} ${y}) scale(${sc}) skewX(-6)">${K.SEGS.slice(0, 7).map(s => `<polygon data-seg="${id}:${d * 8 + K.SEGS.indexOf(s)}" points="${SEG_SHAPE[s]}" fill="#3a1414"/>`).join('')}<circle data-seg="${id}:${d * 8 + 7}" cx="88" cy="150" r="7" fill="#3a1414"/></g>`;
 }
+// breadboard da 830 o 400 punti, o modulo di binari (punto J): disegno nelle coordinate della tavola
+function tavolaSVG(c) {
+  const D = K.DIM_TAVOLA[c.type], W = D.w * P;
+  let s = '';
+  if (c.type === 'binari') {
+    s += `<rect x="0" y="${-0.8 * P}" width="${W}" height="${2.6 * P}" rx="5" fill="#f7f5ee" stroke="#cfcab8"/>`;
+    for (const [dy, col] of [[-0.5, '#d33'], [1.5, '#26c']]) s += `<line x1="${3 * P}" x2="${(D.w - 5) * P}" y1="${dy * P}" y2="${dy * P}" stroke="${col}" stroke-width="1"/>`;
+    for (const [dy, t] of [[0, '+'], [1, '−']]) s += `<text x="${1.6 * P}" y="${dy * P + 3}" font-size="9" text-anchor="middle" fill="${t === '+' ? '#d33' : '#26c'}" font-family="sans-serif">${t}</text>`;
+  } else {
+    const xr = (4 + Math.floor((D.bin - 1) / 5) * 6 + 4 + 0.5) * P;
+    s += `<rect x="0" y="${-0.8 * P}" width="${W}" height="${(D.h + 0.6) * P}" rx="6" fill="#f7f5ee" stroke="#cfcab8"/>`;
+    s += `<rect x="2" y="${8.2 * P}" width="${W - 4}" height="${0.6 * P}" fill="#e4e0d2"/>`;
+    for (const [dy, col] of [[-0.5, '#d33'], [1.5, '#26c'], [16.5, '#d33'], [18.5, '#26c']]) s += `<line x1="${3 * P}" x2="${xr}" y1="${dy * P}" y2="${dy * P}" stroke="${col}" stroke-width="1"/>`;
+    for (const [dy, t] of [[0, '+'], [1, '−'], [17, '+'], [18, '−']]) s += `<text x="${1.6 * P}" y="${dy * P + 3}" font-size="9" text-anchor="middle" fill="${t === '+' ? '#d33' : '#26c'}" font-family="sans-serif">${t}</text>`;
+    'abcdefghij'.split('').forEach((r, i) => s += `<text x="${1 * P}" y="${(i < 5 ? 3 + i : 5 + i) * P + 3}" font-size="7" text-anchor="middle" fill="#888" font-family="sans-serif">${r}</text>`);
+    for (let k = 1; k <= D.col; k += k === 1 ? 4 : 5) s += `<text x="${(1 + k) * P}" y="${2.3 * P}" font-size="6.5" text-anchor="middle" fill="#888" font-family="sans-serif">${k}</text>`;
+  }
+  if (c.id !== 'bb0' && c.id !== 'ghost' && c.id !== 'ico') s += `<text x="${W - 4}" y="${-1.5}" font-size="6" text-anchor="end" fill="#998" font-family="sans-serif">${esc(c.label || '')}</text>`;
+  for (const [dx, dy] of K.foriTavola(c)) s += `<rect x="${dx * P - 2.2}" y="${dy * P - 2.2}" width="4.4" height="4.4" rx="0.8" fill="#3d3d3d"/>`;
+  return s;
+}
 function compSVG(c) {
+  if (K.tavola(c)) return tavolaSVG(c);
   const o = c.opt, id = c.id;
   const leg = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#a7a9ac" stroke-width="1.6" stroke-linecap="round"/>`;
   switch (c.type) {
@@ -144,15 +159,18 @@ function etichetta(c) {
   return `<text ${pos} font-size="6.5" text-anchor="middle" fill="#334" font-family="sans-serif" paint-order="stroke" stroke="#fff" stroke-width="2" pointer-events="none">${esc(t.trim())}</text>`;
 }
 function disegnaComponenti() {
+  K.impostaTavole(B.bb.comps);           // i fori seguono le breadboard (aggiunte, spostate, tolte)
   const g = $('#bb-comps');
-  g.innerHTML = B.bb.comps.map(c => `<g class="bbc" data-comp="${c.id}" transform="translate(${c.x * P} ${c.y * P}) rotate(${(c.rot || 0) * 90})">${compSVG(c)}</g>`).join('') +
-    B.bb.comps.map(etichetta).join('');
+  const ordine = [...B.bb.comps.filter(K.tavola), ...B.bb.comps.filter(c => !K.tavola(c))];   // le breadboard sotto
+  g.innerHTML = ordine.map(c => `<g class="bbc${K.tavola(c) ? ' tavola' : ''}" data-comp="${c.id}" transform="translate(${c.x * P} ${c.y * P}) rotate(${(c.rot || 0) * 90})">${compSVG(c)}</g>`).join('') +
+    ordine.filter(c => !K.tavola(c)).map(etichetta).join('');
   // area di presa: tutto il riquadro del componente (il ponticello, disegnato solo con il tratto, prima si
   // prendeva solo cliccando esattamente sulla linea: il clic finiva sul foro sotto e partiva un filo)
   B.ingombri = [];
   g.querySelectorAll('[data-comp]').forEach(el => { try {
     const b = el.getBBox(), m = 2.5, c = B.bb.comps.find(c => c.id === el.dataset.comp);
     el.insertAdjacentHTML('afterbegin', `<rect class="presa" x="${b.x - m}" y="${b.y - m}" width="${b.width + 2 * m}" height="${b.height + 2 * m}" fill="transparent"/>`);
+    if (K.tavola(c)) return;             // i fori di una breadboard non sono "coperti" dalla breadboard
     // ingombro nel banco (passi), ruotato come il componente: i fori sotto il corpo sono coperti
     const pts = [[b.x, b.y], [b.x + b.width, b.y + b.height]].map(([x, y]) => K.ruota(x / P, y / P, c.rot || 0));
     B.ingombri.push({ id: c.id, x0: c.x + Math.min(pts[0][0], pts[1][0]), x1: c.x + Math.max(pts[0][0], pts[1][0]), y0: c.y + Math.min(pts[0][1], pts[1][1]), y1: c.y + Math.max(pts[0][1], pts[1][1]),
@@ -216,6 +234,10 @@ const nuovoId = p => p + Date.now().toString(36) + Math.random().toString(36).sl
 function aggiungi(tipo, x, y, rot = 0) {
   const opt = Object.fromEntries(K.OPZIONI[tipo].map(([k, d]) => [k, d]));
   const c = { id: nuovoId('c'), type: tipo, x, y, rot, opt, label: nuovaEtichetta(tipo) };
+  if (K.tavola(c)) {
+    if (B.bb.comps.filter(K.tavola).length >= K.MAX_TAVOLE) { messaggioStato(`Al massimo ${K.MAX_TAVOLE} breadboard e binari`); return null; }
+    const sn = scattoTavola(c, new Set()); if (sn) { c.x += sn[0]; c.y += sn[1]; }
+  }
   modifica(bb => bb.comps.push(c));
   B.sel = new Set([c.id]);
   disegnaSelezione();
@@ -373,13 +395,13 @@ function rinfresca(r) {
   const now = performance.now();
   for (const p of r.prob) { const x = B.problemi.get(p.cod + ':' + p.chiave); if (x) x.quando = now; else segnala(p); }
 }
-window.bbOnC = ms => { if (B.caricato && B.bb.comps.length) avanza(ms); };
-window.bbOnM = () => { if (B.caricato && B.bb.comps.length) avanza(S.ms); };
+window.bbOnC = ms => { if (B.caricato && K.haCircuito(B.bb)) avanza(ms); };
+window.bbOnM = () => { if (B.caricato && K.haCircuito(B.bb)) avanza(S.ms); };
 window.bbReset = () => { B.ta = 0; B.osc = {}; B.regT = null; B.tratto++; B.acc = null; B.pub = null; B.ultimoMs = 0; B.segnalati.clear(); B.inviati.clear(); B.adcInviati.clear(); B.capV.clear(); B.chiaveStato = ''; ingressiIniziali(); };
 // la scheda riparte: prima che il programma configuri i pin, gli ingressi hanno già il livello del
 // circuito (es. CLK e DT dell'encoder a 1 per i pull-up), come sulla breadboard vera
 function ingressiIniziali() {
-  if (!B.caricato || !B.bb.comps.length || B.proj !== (S.server.project && S.server.project.id)) return;
+  if (!B.caricato || !K.haCircuito(B.bb) || B.proj !== (S.server.project && S.server.project.id)) return;
   if (B.dirtyCirc) costruisci();
   if (B.corti.length) return;
   const res = K.risolvi(B.circ, { pins: {}, pwm: [], premuti: new Set(B.premuti), enc: { ...B.enc }, b1: false }, null, null);
@@ -703,7 +725,7 @@ window.bbFrame = () => {
   const now = performance.now();
   // quanto del tempo analogico si riesce a calcolare (ultimo secondo)
   if (now - (B.contaT || 0) > 1000) { B.ritardo = B.richiesti > 0 && B.fatti < B.richiesti * 0.98 ? Math.round(100 * B.fatti / B.richiesti) : 0; B.richiesti = B.fatti = 0; B.contaT = now; }
-  if (!B.bb.comps.length) { mostraProblemi(now); return; }
+  if (!K.haCircuito(B.bb)) { mostraProblemi(now); return; }
   if (inCorsa()) {
     avanza(S.ms);
     aggiornaIngressi();
@@ -876,8 +898,10 @@ function applicaVista() {
   const scala = (svg.getBoundingClientRect().width || 1) / (v.w * P);
   svg.classList.toggle('lontano', scala * 6.5 < 3.6);
 }
+// il banco si allarga con le breadboard: si può allontanare la vista fino a vederle tutte
+const larghezzaMax = () => Math.max(MONDO.w, K.BB.x + K.BB.w - MONDO.x + 10) * 2;
 function zoom(f, cx, cy) {
-  const v = B.vista, w = Math.min(MONDO.w * 2, Math.max(12, v.w * f)), h = w * v.h / v.w;
+  const v = B.vista, w = Math.min(larghezzaMax(), Math.max(12, v.w * f)), h = w * v.h / v.w;
   if (cx === undefined) { cx = v.x + v.w / 2; cy = v.y + v.h / 2; }
   v.x = cx - (cx - v.x) * w / v.w; v.y = cy - (cy - v.y) * h / v.h; v.w = w; v.h = h;
   applicaVista();
@@ -885,6 +909,7 @@ function zoom(f, cx, cy) {
 function adatta() {
   // tutto quello che c'è: Nucleo, breadboard, componenti, fili (non lo spazio vuoto del mondo)
   let x0 = K.NUCLEO.x - 3, y0 = K.NUCLEO.y - 2, x1 = K.BB.x + K.BB.w + 1, y1 = K.NUCLEO.y + K.NUCLEO.h + 1;
+  if (K.BB.w) { x0 = Math.min(x0, K.BB.x - 1); y0 = Math.min(y0, K.BB.y - 2); y1 = Math.max(y1, K.BB.y + K.BB.h + 2); }   // tutte le breadboard
   for (const r of B.ingombri || []) { x0 = Math.min(x0, r.x0 - 1); y0 = Math.min(y0, r.y0 - 1); x1 = Math.max(x1, r.x1 + 1); y1 = Math.max(y1, r.y1 + 2); }
   for (const w of B.bb.wires) for (const [x, y] of w.p) { x0 = Math.min(x0, x - 1); y0 = Math.min(y0, y - 1); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1); }
   const svg = $('#bb-svg'), r = svg.getBoundingClientRect(), ar = r.height / Math.max(1, r.width) || 0.5;
@@ -973,8 +998,8 @@ function coloreAuto(a, b) {
   const net = K.netlist(B.bb);
   const nodi = [a, b].map(g => net.nodoDi(g[0], g[1])).filter(n => n >= 0).map(n => net.nodi[n]);
   const chiavi = nodi.flatMap(n => n.chiavi);
-  if (nodi.some(n => n.alim.includes('GND')) || chiavi.some(k => k === 'bb:T-' || k === 'bb:B-')) return K.COLORI_FILO[1];
-  if (nodi.some(n => n.alim.includes('5V') || n.alim.includes('3V3')) || chiavi.some(k => k === 'bb:T+' || k === 'bb:B+')) return K.COLORI_FILO[0];
+  if (nodi.some(n => n.alim.includes('GND')) || chiavi.some(k => /^bb:(\w+:)?[TB]-$/.test(k))) return K.COLORI_FILO[1];
+  if (nodi.some(n => n.alim.includes('5V') || n.alim.includes('3V3')) || chiavi.some(k => /^bb:(\w+:)?[TB]\+$/.test(k))) return K.COLORI_FILO[0];
   // un filo già presente sullo stesso nodo dà il colore
   for (const w of B.bb.wires) for (const q of [w.p[0], w.p[w.p.length - 1]]) { const n = net.nodoDi(q[0], q[1]); if (n >= 0 && nodi.some(x => x.i === n) && SEGNALI.includes(w.col)) return w.col; }
   const pin = nodi.flatMap(n => n.pins)[0];
@@ -1032,7 +1057,8 @@ function ruotaSel() {
 function ruotaInPlace(ids, bb = B.bb) {
   {
     for (const c of bb.comps) if (ids.has(c.id)) {
-      const centro = cc => { const pp = K.piediniXY(cc), xs = pp.map(p => p.x), ys = pp.map(p => p.y); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+      const centro = cc => { if (K.tavola(cc)) { const r = K.rettTavola(cc); return [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2]; }
+        const pp = K.piediniXY(cc), xs = pp.map(p => p.x), ys = pp.map(p => p.y); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
       const c0 = centro(c);
       c.rot = ((c.rot || 0) + 1) % 4;
       const c1 = centro(c);
@@ -1050,20 +1076,58 @@ function iniziaMuovi(copiaPrima) {
   if (!B.sel.size) { messaggioStato('Seleziona prima qualcosa (clic, o trascina un rettangolo)'); return; }
   if (copiaPrima) { copia(); incolla(0); }
   const g = B.hover || [0, 0], ora = JSON.stringify(B.bb);
-  B.drag = { kind: 'muovi', start: g, prima: ora, mosso: false, copia: !!copiaPrima };
+  B.drag = { kind: 'muovi', start: g, prima: ora, mosso: false, copia: !!copiaPrima, ...(copiaPrima ? {} : sopraTavole()) };
   $('#bb-svg').classList.add('sposta');
   messaggioStato((copiaPrima ? 'Copia' : 'Sposta') + ': muovi il mouse e clicca dove lasciarla · Esc annulla');
 }
 function spostaSelezione(dx, dy) {
-  for (const c of B.bb.comps) if (B.sel.has(c.id)) { c.x += dx; c.y += dy; }
-  for (const w of B.bb.wires) if (B.sel.has(w.id)) w.p = w.p.map(([x, y]) => [x + dx, y + dy]);
+  const d = B.drag || {}, va = id => B.sel.has(id) || (d.extra && d.extra.has(id));
+  for (const c of B.bb.comps) if (va(c.id)) { c.x += dx; c.y += dy; }
+  for (const w of B.bb.wires) if (va(w.id)) w.p = w.p.map(([x, y]) => [x + dx, y + dy]);
+  // fili con un solo capo sulla breadboard che si sposta: il capo la segue, l'angolo vicino resta a 90°
+  for (const [id, i] of d.estremi || []) {
+    const w = B.bb.wires.find(w => w.id === id);
+    if (!w) continue;
+    const q = w.p[i], j = i === 0 ? 1 : w.p.length - 2, n = w.p[j];
+    if (w.p.length > 2) { if (n[0] === q[0]) n[0] += dx; else if (n[1] === q[1]) n[1] += dy; }
+    w.p[i] = [q[0] + dx, q[1] + dy];
+    if (w.p.length === 2) w.p = percorso(w.p);
+  }
+}
+// spostando una breadboard si portano dietro i componenti e i fili che ci stanno sopra (come quella vera)
+function sopraTavole() {
+  const tav = B.bb.comps.filter(c => K.tavola(c) && B.sel.has(c.id)).map(K.rettTavola);
+  if (!tav.length) return {};
+  const su = (x, y) => tav.some(r => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
+  const extra = new Set(), estremi = [];
+  for (const c of B.bb.comps) if (!K.tavola(c) && !B.sel.has(c.id)) { const pp = K.piediniXY(c); if (pp.length && pp.every(p => su(p.x, p.y))) extra.add(c.id); }
+  for (const w of B.bb.wires) if (!B.sel.has(w.id)) {
+    if (w.p.every(q => su(q[0], q[1]))) extra.add(w.id);
+    else [0, w.p.length - 1].forEach(i => { if (su(w.p[i][0], w.p[i][1]) && K.FORI.has(K.chiave(w.p[i][0], w.p[i][1]))) estremi.push([w.id, i]); });
+  }
+  return { extra, estremi };
+}
+// una breadboard lasciata vicino a un'altra (entro 3 passi) si attacca di fianco, sopra o sotto, allineata:
+// restano separate come quelle vere (binari e file non si toccano), si collegano con un filo
+function scattoTavola(c = null, esclusi = B.sel) {
+  if (!c) { const mob = B.bb.comps.filter(x => K.tavola(x) && esclusi.has(x.id)); if (mob.length !== 1) return null; c = mob[0]; }
+  const a = K.rettTavola(c);
+  let best = null;
+  for (const o of B.bb.comps) if (K.tavola(o) && o.id !== c.id && !esclusi.has(o.id)) {
+    const b = K.rettTavola(o);
+    for (const [dx, dy] of [[b.x1 - a.x0, b.y0 - a.y0], [b.x0 - a.x1, b.y0 - a.y0], [b.x0 - a.x0, b.y1 - a.y0], [b.x0 - a.x0, b.y0 - a.y1]]) {
+      const dd = Math.abs(dx) + Math.abs(dy);
+      if (Math.abs(dx) <= 3 && Math.abs(dy) <= 3 && dd && (!best || dd < best.dd)) best = { dx, dy, dd };
+    }
+  }
+  return best && [best.dx, best.dy];
 }
 
 // aggancio: dove finirebbero i piedini dei componenti (verde = foro libero, rosso = fuori dai fori o
 // occupato, arancione = due piedini diversi dello stesso componente sulla stessa fila)
 function controllaAggancio(comps) {
   const ids = new Set(comps.map(c => c.id));
-  const altri = { v: 1, comps: B.bb.comps.filter(c => !ids.has(c.id)), wires: B.bb.wires };
+  const altri = { v: 2, comps: B.bb.comps.filter(c => !ids.has(c.id) || K.tavola(c)), wires: B.bb.wires };
   const net = K.netlist(altri);
   const occupati = new Set(altri.comps.flatMap(c => K.piediniXY(c).map(p => K.chiave(p.x, p.y))));
   const out = [], avvisi = [];
@@ -1115,7 +1179,14 @@ function wire() {
   };
   svg.addEventListener('pointerdown', ev => {
     if (ev.button === 2) return;
-    const m = mondo(ev), g = griglia(m), hit = colpito(ev);
+    const m = mondo(ev), g = griglia(m);
+    let hit = colpito(ev), tavSel = null;
+    // breadboard (punto J): sui fori si fanno i fili come sempre; la breadboard si prende fuori dai fori e, per
+    // non spostarla per sbaglio, solo se è già selezionata (un clic la seleziona; trascinare = rettangolo o vista)
+    if (hit.comp && K.tavola(B.bb.comps.find(c => c.id === hit.comp))) {
+      if (Math.hypot(m[0] - g[0], m[1] - g[1]) < 0.42 && suFori(g)) hit = {};
+      else if (!B.sel.has(hit.comp)) { tavSel = hit.comp; hit = {}; }
+    }
     try { svg.setPointerCapture(ev.pointerId); } catch {}
     const tocco = ev.pointerType === 'touch';
     if (tocco) {
@@ -1152,7 +1223,7 @@ function wire() {
       if (!ev.ctrlKey && !ev.metaKey && !B.sel.has(hit.comp)) B.sel = new Set();
       if ((ev.ctrlKey || ev.metaKey) && B.sel.has(hit.comp)) B.sel.delete(hit.comp); else B.sel.add(hit.comp);
       disegnaSelezione();
-      B.drag = { kind: 'comp', start: g, prima: JSON.stringify(B.bb), mosso: false, xy: tocco ? [ev.clientX, ev.clientY] : null };
+      B.drag = { kind: 'comp', start: g, prima: JSON.stringify(B.bb), mosso: false, xy: tocco ? [ev.clientX, ev.clientY] : null, ...sopraTavole() };
       if (tocco) { const id = hit.comp, xy = [ev.clientX, ev.clientY]; clearTimeout(lungo); lungo = setTimeout(() => { if (B.drag && B.drag.kind === 'comp' && !B.drag.mosso && dita.size === 1) { B.drag = null; B.sel = new Set([id]); disegnaSelezione(); window.dispatchEvent(new CustomEvent('bb-menu', { detail: { id, x: xy[0], y: xy[1] } })); } }, 550); }
       return;
     }
@@ -1165,8 +1236,8 @@ function wire() {
     }
     // sul vuoto: rettangolo di selezione (col dito: sposta la vista)
     if (!ev.ctrlKey && !ev.metaKey && B.sel.size) { B.sel.clear(); disegnaSelezione(); }
-    if (tocco) { B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista } }; return; }
-    B.drag = { kind: 'rett', da: m, a: m };
+    if (tocco) { B.drag = { kind: 'pan', start: [ev.clientX, ev.clientY], v: { ...B.vista }, tav: tavSel }; return; }
+    B.drag = { kind: 'rett', da: m, a: m, tav: tavSel };
   });
   svg.addEventListener('pointermove', ev => {
     if (ev.pointerType === 'touch' && dita.has(ev.pointerId)) {
@@ -1175,7 +1246,7 @@ function wire() {
       if (d && d.kind === 'pinza') {
         if (dita.size < 2) return;
         const p = pinza(), r = svg.getBoundingClientRect(), k0 = d.v.w / r.width;
-        const w = Math.min(MONDO.w * 2, Math.max(12, d.v.w * d.d / p.d)), k = w / r.width;
+        const w = Math.min(larghezzaMax(), Math.max(12, d.v.w * d.d / p.d)), k = w / r.width;
         B.vista.w = w; B.vista.h = w * d.v.h / d.v.w;
         B.vista.x = d.v.x + (d.c[0] - r.left) * k0 - (p.c[0] - r.left) * k;
         B.vista.y = d.v.y + (d.c[1] - r.top) * k0 - (p.c[1] - r.top) * k;
@@ -1248,7 +1319,9 @@ function wire() {
     const d = B.drag;
     svg.classList.remove('pan');
     if (!d || d.kind === 'muovi') return;
+    if ((d.kind === 'comp') && d.mosso) { const sn = scattoTavola(); if (sn) spostaSelezione(sn[0], sn[1]); }
     B.drag = null;
+    if (d.kind === 'pan' && d.tav && Math.hypot(ev.clientX - d.start[0], ev.clientY - d.start[1]) < 8) { B.sel = new Set([d.tav]); disegnaSelezione(); }
     if (d.kind === 'press') premi(d.id, false);
     else if (d.kind === 'encsw') setTimeout(() => { const e = B.enc[d.id] || [0, 0, 0]; B.enc[d.id] = [e[0], e[1], 0]; aggiornaIngressi(); }, 120);
     else if (d.kind === 'filoGiu') {
@@ -1262,9 +1335,12 @@ function wire() {
     } else if (d.kind === 'rett') {
       $('#bb-ghost').innerHTML = '';
       const [x0, x1] = [Math.min(d.da[0], d.a[0]), Math.max(d.da[0], d.a[0])], [y0, y1] = [Math.min(d.da[1], d.a[1]), Math.max(d.da[1], d.a[1])];
-      if (x1 - x0 < 0.3 && y1 - y0 < 0.3) return;
+      if (x1 - x0 < 0.3 && y1 - y0 < 0.3) { if (d.tav) { B.sel = new Set([d.tav]); disegnaSelezione(); } return; }
       const dentro = ([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
-      for (const c of B.bb.comps) if (K.piediniXY(c).every(p => dentro([p.x, p.y]))) B.sel.add(c.id);
+      for (const c of B.bb.comps) {
+        if (K.tavola(c)) { const r = K.rettTavola(c); if (dentro([r.x0, r.y0]) && dentro([r.x1, r.y1])) B.sel.add(c.id); }
+        else if (K.piediniXY(c).every(p => dentro([p.x, p.y]))) B.sel.add(c.id);
+      }
       for (const w of B.bb.wires) if (w.p.every(dentro)) B.sel.add(w.id);
       disegnaSelezione();
     }
@@ -1292,6 +1368,7 @@ function wire() {
 }
 function finisciMuovi() {
   const d = B.drag;
+  if (d.mosso) { const sn = scattoTavola(); if (sn) spostaSelezione(sn[0], sn[1]); }
   B.drag = null;
   $('#bb-svg').classList.remove('sposta'); $('#bb-sel-aggancio').innerHTML = ''; messaggioStato('');
   if (!d.mosso) return;
@@ -1356,7 +1433,7 @@ function pannelloProprieta() {
   if (!c) {
     const w = ids.length === 1 && B.bb.wires.find(w => w.id === ids[0]);
     box.innerHTML = w ? `<span class="muted small">Filo: trascina un estremo per spostarlo, trascina il filo per piegarlo, doppio clic su un angolo per toglierlo · colore dalla tavolozza · R ruota · Canc elimina</span>`
-      : `<span class="muted small">${B.bb.comps.length ? 'Clic su un componente per le sue proprietà · clic su un foro e clic sull\'arrivo = filo · rotella = zoom, Maiusc+trascina = sposta la vista · R ruota, M sposta, C copia, Canc elimina · ? = tutti i comandi' : 'Trascina un componente dalla palette a sinistra, o carica un esempio (Esempi…). Clic su un foro e clic sull\'arrivo per un filo. ? = tutti i comandi.'}</span>`;
+      : `<span class="muted small">${K.haCircuito(B.bb) ? 'Clic su un componente per le sue proprietà · clic su un foro e clic sull\'arrivo = filo · rotella = zoom, Maiusc+trascina = sposta la vista · R ruota, M sposta, C copia, Canc elimina · ? = tutti i comandi' : 'Trascina un componente dalla palette a sinistra, o carica un esempio (Esempi…). Clic su un foro e clic sull\'arrivo per un filo. ? = tutti i comandi.'}</span>`;
     return;
   }
   const info = K.TIPI[c.type].nome, o = c.opt;
@@ -1397,6 +1474,7 @@ async function esportaPNG() {
   for (const id of ['bb-sel', 'bb-nodo', 'bb-ghost', 'bb-prob']) { const g = svg.querySelector('#' + id); if (g) g.remove(); }
   const xs = [], ys = [];
   for (const c of B.bb.comps) for (const p of K.piediniXY(c)) { xs.push(p.x); ys.push(p.y); }
+  for (const c of B.bb.comps.filter(K.tavola)) { const r = K.rettTavola(c); xs.push(r.x0, r.x1); ys.push(r.y0 + 7, r.y1); }
   for (const w of B.bb.wires) for (const q of w.p) { xs.push(q[0]); ys.push(q[1]); }
   let x0 = Math.min(MONDO.x, ...xs) - 1, y0 = Math.min(MONDO.y, ...ys) - 7, x1 = Math.max(MONDO.x + MONDO.w, ...xs) + 1, y1 = Math.max(MONDO.y + MONDO.h, ...ys) + 2;
   const W = 2400, H = Math.round(W * (y1 - y0) / (x1 - x0));
@@ -1445,13 +1523,14 @@ const IC = {   // icone SVG locali (24×24, tratto = colore del testo)
 const ic = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
 const CATEGORIE = [
   ['Base', ['res', 'pot', 'cap', 'jumper']],
+  ['Breadboard', ['bb830', 'bb400', 'binari']],
   ['LED e display', ['led', 'seg7', 'seg7x3', 'diode']],
   ['Transistor', ['npn', 'pnp']],
   ['Ingressi', ['button', 'encoder']],
   ['Uscite', ['buzzer', 'servo', 'motor']],
   ['Strumenti', ['dmm', 'scope', 'gen', 'psu']],
 ];
-const NOME_CORTO = { res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: 'Display 1 cifra', seg7x3: 'Display 3 cifre',
+const NOME_CORTO = { bb830: 'Breadboard 830', bb400: 'Mezza (400)', binari: 'Binari + −', res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: 'Display 1 cifra', seg7x3: 'Display 3 cifre',
   diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC', dmm: 'Multimetro', scope: 'Oscilloscopio', gen: 'Generatore', psu: 'Alimentatore' };
 function iconaComp(tipo) {
   const c = { id: 'ico', type: tipo, x: 0, y: 0, rot: 0, opt: Object.fromEntries(K.OPZIONI[tipo].map(([k, v]) => [k, v])) };
@@ -1581,11 +1660,11 @@ function monta() {
   $('#bb-esempio').addEventListener('change', e => {
     const v = e.target.value; e.target.value = '';
     if (!v) return;
-    if (B.bb.comps.length && !confirm('Sostituisco il circuito della breadboard con l\'esempio? (Puoi tornare indietro con Annulla.)')) return;
+    if (K.haCircuito(B.bb) && !confirm('Sostituisco il circuito della breadboard con l\'esempio? (Puoi tornare indietro con Annulla.)')) return;
     modifica(bb => { const x = K.esempioCronometro(v === '1k5' ? 1500 : 15000); bb.comps = x.comps; bb.wires = x.wires; });
     B.sel.clear(); disegnaSelezione();
   });
-  btn('#bb-svuota', () => { if (B.bb.comps.length + B.bb.wires.length && confirm('Tolgo tutti i componenti e i fili? (Puoi tornare indietro con Annulla.)')) { modifica(bb => { bb.comps = []; bb.wires = []; }); B.sel.clear(); disegnaSelezione(); } });
+  btn('#bb-svuota', () => { if (K.haCircuito(B.bb) && confirm('Tolgo tutti i componenti e i fili? (Le breadboard restano. Puoi tornare indietro con Annulla.)')) { modifica(bb => { bb.comps = bb.comps.filter(K.tavola); bb.wires = []; }); B.sel.clear(); disegnaSelezione(); } });
   $('#bb-colori').innerHTML = K.COLORI_FILO.map(c => `<button class="bbcol" data-col="${c}" style="background:${c}" title="Colore del filo selezionato"></button>`).join('');
   $('#bb-colori').addEventListener('click', e => {
     const c = e.target.dataset && e.target.dataset.col;

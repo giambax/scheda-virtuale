@@ -9,8 +9,8 @@
 // Il contenuto di un link è un DATO scritto da chiunque: qui si controlla tutto (dimensioni,
 // nomi dei file, tipi) e niente di quello che arriva viene mai usato come HTML.
 import { deflateSync, Inflate, strToU8, strFromU8 } from '../vendor/fflate/esm/browser.js';
-import { parseCproject } from './build.js?v=2026-11-25h';
-import { pulisciBreadboard } from './circuito.js?v=2026-11-25h';
+import { parseCproject } from './build.js?v=2026-11-25i';
+import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-25i';
 
 export const LINK_MAX = 400000;          // caratteri dopo # che si accettano
 const DATI_MAX = 3 * 1024 * 1024;        // JSON scompresso (contro gli "zip bomb")
@@ -56,7 +56,7 @@ export function creaLink(base, p) {
   }
   const dati = { v: 1, nome: p.nome, files, devices: Array.isArray(p.devices) ? p.devices : null };
   if (Array.isArray(p.canali) && p.canali.length) dati.canali = p.canali;
-  if (p.breadboard && Array.isArray(p.breadboard.comps) && (p.breadboard.comps.length || p.breadboard.wires.length)) dati.breadboard = pulisciBreadboard(p.breadboard);
+  if (p.breadboard && Array.isArray(p.breadboard.comps) && daSalvare(pulisciBreadboard(p.breadboard))) dati.breadboard = pulisciBreadboard(p.breadboard);
   if (p.esercizio) dati.esercizio = { titolo: p.esercizio.titolo, testo: p.esercizio.testo, sola: (p.esercizio.sola || []).filter(r => r in files) };
   const z = b64url(deflateSync(strToU8(JSON.stringify(dati)), { level: 9 }));
   const url = base.replace(/#.*$/, '') + '#' + (p.esercizio ? 'esercizio' : 'progetto') + '=' + z;

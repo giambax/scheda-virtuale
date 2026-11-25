@@ -49,16 +49,55 @@ const foro = (x, y, id, net, nome) => FORI.set(x + ',' + y, { x, y, id, net, nom
   CN8.forEach(([s, a], i) => foro(5, 23 + i, 'CN8-' + (i + 1), s, `CN8 ${a} (${s})`));
   CN5.forEach(([s, a], i) => foro(24, 10 + i, 'CN5-' + (10 - i), segnale(s) || s, `CN5 ${a}${a !== s ? ' (' + s + ')' : ''}`));
   CN9.forEach(([s, a], i) => foro(24, 21 + i, 'CN9-' + (8 - i), s, `CN9 ${a} (${s})`));
-  // breadboard: 63 colonne, file a–e (in alto) e f–j (in basso), 4 binari da 50 fori (gruppi da 5)
-  const righe = 'abcdefghij';
-  for (let c = 1; c <= 63; c++) for (let r = 0; r < 10; r++) {
-    const y = BY + (r < 5 ? 3 + r : 5 + r);
-    foro(BX + 1 + c, y, righe[r] + c, `bb:${c}${r < 5 ? 'u' : 'd'}`, `${righe[r]}${c}`);
-  }
-  const binari = [['T+', 0, 'binario + in alto'], ['T-', 1, 'binario − in alto'], ['B+', 17, 'binario + in basso'], ['B-', 18, 'binario − in basso']];
-  for (const [b, dy, nome] of binari) for (let k = 0; k < 50; k++) foro(BX + 4 + Math.floor(k / 5) * 6 + k % 5, BY + dy, b + (k + 1), 'bb:' + b, nome);
 })();
+const FORI_CN = new Set(FORI.keys()); // i fori della Nucleo (fissi): una tavola sopra la scheda non li copre
+
+// ------------------------------------------------------------------
+// Breadboard e binari (punto J, 25/11/2026): sono "tavole" nell'elenco dei componenti (bb830, bb400, binari),
+// senza piedini: i loro fori entrano in FORI con impostaTavole() e si collegano come quelli veri (file da 5,
+// binari lungo il lato). Due tavole affiancate restano separate, come quelle vere: si uniscono con un filo.
+// La prima breadboard (id "bb0", quella di sempre in BX, BY) tiene i nomi di prima (a1…, nodi bb:…),
+// così i circuiti salvati e i link vecchi restano uguali.
+export const DIM_TAVOLA = { bb830: { w: 68, h: 19, col: 63, bin: 50 }, bb400: { w: 35, h: 19, col: 30, bin: 25 }, binari: { w: 68, h: 2, col: 0, bin: 50 } };
+export const MAX_TAVOLE = 8;
+export const tavola = c => !!(c && DIM_TAVOLA[c.type]);
+export const TAVOLA0 = { id: 'bb0', type: 'bb830', x: BX, y: BY, rot: 0, opt: {}, label: 'BB1' };
+// fori di una tavola rispetto al suo angolo (prima della rotazione): [dx, dy, id, nodo, nome]
+export function foriTavola(c) {
+  const D = DIM_TAVOLA[c.type], out = [], primo = c.id === 'bb0';
+  const pre = primo ? 'bb:' : `bb:${c.id}:`, nm = t => primo ? t : `${t} (${c.label || c.id})`, idf = t => primo ? t : `${c.label || c.id}:${t}`;
+  const righe = 'abcdefghij';
+  for (let col = 1; col <= D.col; col++) for (let r = 0; r < 10; r++) out.push([1 + col, r < 5 ? 3 + r : 5 + r, idf(righe[r] + col), `${pre}${col}${r < 5 ? 'u' : 'd'}`, nm(righe[r] + col)]);
+  const binari = c.type === 'binari' ? [['T+', 0, 'binario +'], ['T-', 1, 'binario −']]
+    : [['T+', 0, 'binario + in alto'], ['T-', 1, 'binario − in alto'], ['B+', 17, 'binario + in basso'], ['B-', 18, 'binario − in basso']];
+  for (const [b, dy, nome] of binari) for (let k = 0; k < D.bin; k++) out.push([4 + Math.floor(k / 5) * 6 + k % 5, dy, idf(b + (k + 1)), pre + b, nm(nome)]);
+  return out;
+}
+// rettangolo occupato da una tavola (passi), già ruotato
+export function rettTavola(c) {
+  const D = DIM_TAVOLA[c.type];
+  const pts = [[0, -1], [D.w, D.h + 1]].map(([x, y]) => ruota(x, y, c.rot || 0));
+  return { x0: c.x + Math.min(pts[0][0], pts[1][0]), y0: c.y + Math.min(pts[0][1], pts[1][1]), x1: c.x + Math.max(pts[0][0], pts[1][0]), y1: c.y + Math.max(pts[0][1], pts[1][1]) };
+}
+// ingombro di tutte le tavole (per "adatta" e per il banco che si allarga)
 export const BB = { x: BX, y: BY, w: 68, h: 19 };
+let chiaveTavole = '';
+export function impostaTavole(comps) {
+  const tav = (comps || []).filter(tavola);
+  const k = JSON.stringify(tav.map(c => [c.id, c.type, c.x, c.y, c.rot || 0, c.label]));
+  if (k === chiaveTavole) return false;
+  chiaveTavole = k;
+  for (const x of [...FORI.keys()]) if (!FORI_CN.has(x)) FORI.delete(x);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of tav) {
+    for (const [dx, dy, id, net, nome] of foriTavola(c)) { const [rx, ry] = ruota(dx, dy, c.rot || 0); if (!FORI_CN.has(chiave(c.x + rx, c.y + ry))) foro(c.x + rx, c.y + ry, id, net, nome); }
+    const r = rettTavola(c);
+    x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0 + 1); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1 - 1);
+  }
+  if (tav.length) Object.assign(BB, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+  else Object.assign(BB, { x: BX, y: BY, w: 0, h: 0 });
+  return true;
+}
 // piedino Arduino di un pin (D13…), per i nomi
 export const ARDUINO = Object.fromEntries([...CN8, ...CN5, ...CN9].filter(([s]) => /^P/.test(s)).map(([s, a]) => [s, a]));
 
@@ -69,6 +108,9 @@ export const TIPI = {
   led: { nome: 'LED', pref: 'D' },
   button: { nome: 'Pulsante', pref: 'SW' },
   jumper: { nome: 'Ponticello', pref: 'J' },
+  bb830: { nome: 'Breadboard 830 punti', pref: 'BB' },
+  bb400: { nome: 'Breadboard 400 punti (mezza)', pref: 'BB' },
+  binari: { nome: 'Binari di alimentazione (+ −)', pref: 'BB' },
   seg7: { nome: 'Display 1 cifra (5161AS/BS)', pref: 'U' },
   seg7x3: { nome: 'Display 3 cifre (5361AS/BS)', pref: 'U' },
   npn: { nome: 'Transistor NPN (BC107)', pref: 'Q' },
@@ -93,6 +135,7 @@ export const OPZIONI = {
   led: [['color', 'red', ['red', 'green', 'yellow', 'blue', 'white']]],
   button: [],
   jumper: [['span', 2, 1, 20]],
+  bb830: [], bb400: [], binari: [],
   seg7: [['anode', 0, [0, 1]]],
   seg7x3: [['anode', 1, [0, 1]]],
   npn: [['beta', 200, 10, 1000]],
@@ -167,15 +210,19 @@ export function piediniXY(c) {
 // Dati salvati (".breadboard.json"): si controlla tutto, arrivano anche da link di altri
 export const MAX_COMP = 150, MAX_FILI = 400, MAX_PIEGHE = 16;
 const num = (v, min, max, def) => { v = Number(v); return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def; };
-const coord = v => Math.round(num(v, -20, 140, 0));
+const coord = v => Math.round(num(v, -60, 300, 0));
 export const COLORI_FILO = ['#e53935', '#212121', '#1e88e5', '#43a047', '#fdd835', '#fb8c00', '#8e24aa', '#ffffff', '#795548', '#9e9e9e'];
 export function pulisciBreadboard(d) {
-  const out = { v: 1, comps: [], wires: [] };
-  if (!d || typeof d !== 'object') return out;
+  // v 2 (punto J): le breadboard sono nell'elenco dei componenti; i file di prima (v 1) avevano sempre
+  // e solo la breadboard da 830 in BX, BY, che qui si aggiunge
+  const out = { v: 2, comps: [], wires: [] };
+  if (!d || typeof d !== 'object') { out.comps.push({ ...TAVOLA0, opt: {} }); return out; }
+  let nTav = 0;
   const ids = new Set();
   const id = (v, p) => { let s = typeof v === 'string' && /^\w{1,24}$/.test(v) && !ids.has(v) ? v : p + Math.random().toString(36).slice(2, 9); ids.add(s); return s; };
   for (const c of Array.isArray(d.comps) ? d.comps.slice(0, MAX_COMP) : []) {
     if (!c || !TIPI[c.type]) continue;
+    if (tavola(c) && ++nTav > MAX_TAVOLE) continue;
     const opt = {};
     for (const [k, def, a, b] of OPZIONI[c.type]) {
       const v = (c.opt || {})[k];
@@ -186,6 +233,7 @@ export function pulisciBreadboard(d) {
     out.comps.push({ id: id(c.id, 'c'), type: c.type, x: coord(c.x), y: coord(c.y), rot: Math.round(num(c.rot, 0, 3, 0)), opt,
       label: String(c.label ?? '').replace(/[^\w\-+.,µΩ ]/g, '').slice(0, 12) });
   }
+  if (d.v !== 2 && !out.comps.some(c => c.id === TAVOLA0.id)) out.comps.unshift({ ...TAVOLA0, opt: {} });
   for (const w of Array.isArray(d.wires) ? d.wires.slice(0, MAX_FILI) : []) {
     if (!w || !Array.isArray(w.p) || w.p.length < 2) continue;
     const p = w.p.slice(0, MAX_PIEGHE + 2).map(q => [coord(q && q[0]), coord(q && q[1])]);
@@ -220,7 +268,12 @@ export function scriviValore(v, u = 'Ω') {
 // ------------------------------------------------------------------
 // Netlist: dai fori, dai binari, dai fili e dai ponticelli ai nodi elettrici
 export const chiave = (x, y) => x + ',' + y;
+// c'è un circuito? (le sole breadboard vuote non contano)
+export const haCircuito = bb => !!bb && (bb.wires.length > 0 || bb.comps.some(c => !tavola(c)));
+// c'è qualcosa da salvare o da mettere nel link? (non basta la sola breadboard di sempre al suo posto)
+export const daSalvare = bb => haCircuito(bb) || JSON.stringify(bb.comps) !== JSON.stringify([TAVOLA0]);
 export function netlist(bb) {
+  impostaTavole(bb.comps);           // i fori delle breadboard di questo circuito (non fa niente se sono le stesse)
   const par = new Map();
   const find = k => { let r = k; while (par.get(r) !== r) r = par.get(r); let q = k; while (par.get(q) !== r) { const n = par.get(q); par.set(q, r); q = n; } return r; };
   const nodo = (x, y) => { const f = FORI.get(chiave(x, y)); const k = f ? f.net : 'p:' + chiave(x, y); if (!par.has(k)) par.set(k, k); return k; };
@@ -628,3 +681,6 @@ export function esempioCronometro(rB = 15000) {
   NW(ROSSO, '+3V3', bin('B+', 63));
   return pulisciBreadboard({ comps, wires });
 }
+
+// all'avvio: la breadboard di sempre (la pagina chiama impostaTavole a ogni disegno)
+impostaTavole([TAVOLA0]);

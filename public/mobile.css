@@ -133,3 +133,27 @@ body.tocco .bb-azioni[hidden] { display: none; }
   .banco-viste, .banco .bb-stato { display: none; }
   .top { padding-top: 2px; padding-bottom: 2px; }
 }
+
+/* ---- tablet in orizzontale (punto I): pannello di lato, banco alto; palette stretta come sul tablet ---- */
+body.pannello-lato { --palette-w: 96px; }
+body.pannello-lato .layout { grid-template-columns: var(--palette-w) minmax(0, 1fr) var(--pannello-w, 380px); grid-template-rows: minmax(0, 1fr); }
+body.pannello-lato.pannello-chiuso .layout { grid-template-columns: var(--palette-w) minmax(0, 1fr) 44px; grid-template-rows: minmax(0, 1fr); }
+body.pannello-lato .palette { grid-row: 1; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+body.pannello-lato .pal-cerca { display: none; }
+body.pannello-lato .pal-cat { display: block; padding: 2px 6px 6px; }
+body.pannello-lato .pal-cat h4 { font-size: 9px; margin: 8px 0 4px; text-align: center; }
+body.pannello-lato .pal-griglia { display: grid; grid-template-columns: 1fr; gap: 5px; }
+body.pannello-lato .pal-voce { width: auto; padding: 6px 2px 4px; font-size: 10.5px; }
+body.pannello-lato .pal-voce svg { width: 46px; height: 36px; }
+body.pannello-lato .banco { grid-row: 1; grid-column: 2; }
+body.pannello-lato .pannello { grid-row: 1; grid-column: 3; border-top: 0; border-left: 1px solid var(--border); }
+body.pannello-lato .pannello-maniglia { left: -4px; right: auto; top: 0; bottom: 0; width: 10px; height: auto; cursor: ew-resize; touch-action: none; }
+body.pannello-lato .pannello .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.pannello-lato .pannello .tabs > * { flex: none; }
+body.pannello-lato.pannello-chiuso .pannello .tabs .tab { display: none; }
+body.pannello-lato .banco .bb-barra { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.pannello-lato .banco .bb-barra > * { flex: none; }
+/* tastiera virtuale aperta sul tablet: tutto il lavoro sta sopra la tastiera (sul telefono lo fa già il foglio) */
+@media (min-width: 761px) and (min-height: 521px) {
+  body.tastiera .layout { height: calc(100vh - var(--top-h, 54px) - var(--tastiera, 0px)); }
+}

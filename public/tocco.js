@@ -136,7 +136,15 @@ document.addEventListener('pointerdown', e => { if (bbMenu.classList.contains('a
 // Tastiera virtuale (iPhone: la pagina non si accorcia): il foglio del pannello resta sopra la tastiera
 if (window.visualViewport) {
   const vv = window.visualViewport;
-  const tastiera = () => document.documentElement.style.setProperty('--tastiera', Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop)) + 'px');
+  // anche sul tablet (punto I): il banco e il pannello si accorciano sopra la tastiera (mobile.css, body.tastiera)
+  // e l'editor riporta in vista la riga dove si scrive
+  const tastiera = () => {
+    const h = Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty('--tastiera', h + 'px');
+    document.body.classList.toggle('tastiera', h > 80);
+    const v = window.SVeditor && SVeditor.view;
+    if (h > 80 && v && v.hasFocus) requestAnimationFrame(() => v.dispatch({ effects: v.constructor.scrollIntoView(v.state.selection.main.head, { y: 'center' }) }));
+  };
   vv.addEventListener('resize', tastiera);
   vv.addEventListener('scroll', tastiera);
 }

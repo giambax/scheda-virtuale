@@ -35,6 +35,17 @@ const MIN = 120;
 const TEL = matchMedia('(max-width: 760px), (max-height: 520px)');
 const spazio = () => window.innerHeight - (parseFloat(root.style.getPropertyValue('--top-h')) || 54);
 const pannelloH = () => parseInt(getComputedStyle(root).getPropertyValue('--pannello-h')) || 300;
+// tablet in orizzontale (punto I, iPad 1180×820): il pannello va di lato, così il banco resta alto
+const LATO = matchMedia('(orientation: landscape) and (min-width: 1000px) and (max-height: 1000px) and (min-height: 521px) and (pointer: coarse)');
+const lato = () => { document.body.classList.toggle('pannello-lato', LATO.matches); window.dispatchEvent(new Event('resize')); };
+LATO.addEventListener('change', lato);
+lato();
+const pannelloW = () => parseInt(getComputedStyle(root).getPropertyValue('--pannello-w')) || 380;
+function impostaW(w) {
+  w = Math.max(260, Math.min(Math.round(window.innerWidth * 0.6), Math.round(w)));
+  root.style.setProperty('--pannello-w', w + 'px');
+  ls.set('sv-pannello-w', String(w));
+}
 function impostaH(h) {
   h = Math.max(TEL.matches ? 60 : MIN, Math.min(Math.round(TEL.matches ? spazio() : window.innerHeight * 0.8), Math.round(h)));
   root.style.setProperty('--pannello-h', h + 'px');
@@ -49,6 +60,8 @@ export function pannelloChiuso(v) {
 {
   const h = +ls.get('sv-pannello-h');
   if (h) impostaH(h);
+  const w = +ls.get('sv-pannello-w');
+  if (w) impostaW(w);
   pannelloChiuso(ls.get('sv-pannello-chiuso') === '1');
   const man = document.getElementById('pannello-maniglia');
   man.addEventListener('pointerdown', e => {
@@ -56,8 +69,8 @@ export function pannelloChiuso(v) {
     try { man.setPointerCapture(e.pointerId); } catch {}
     man.classList.add('attiva');
     if (document.body.classList.contains('pannello-chiuso')) { pannelloChiuso(false); impostaH(TEL.matches ? 60 : MIN); }   // sul telefono parte dalla linguetta
-    const y0 = e.clientY, h0 = pannelloH();
-    const muovi = ev => impostaH(h0 + (y0 - ev.clientY));
+    const y0 = e.clientY, h0 = pannelloH(), x0 = e.clientX, w0 = pannelloW();
+    const muovi = ev => LATO.matches ? impostaW(w0 + (x0 - ev.clientX)) : impostaH(h0 + (y0 - ev.clientY));
     const fine = ev => {
       man.classList.remove('attiva'); man.removeEventListener('pointermove', muovi);
       if (TEL.matches) {   // si ferma alla posizione più vicina (un tocco senza trascinare: chiuso ↔ metà)

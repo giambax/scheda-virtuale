@@ -9,9 +9,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0b">
 <link rel="apple-touch-icon" href="icone/icona-180.png">
-<link rel="stylesheet" href="style.css?v=2026-11-26e">
-<link rel="stylesheet" href="web.css?v=2026-11-26e">
-<link rel="stylesheet" href="mobile.css?v=2026-11-26e">
+<link rel="stylesheet" href="style.css?v=2026-11-26q">
+<link rel="stylesheet" href="web.css?v=2026-11-26q">
+<link rel="stylesheet" href="mobile.css?v=2026-11-26q">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -100,6 +100,7 @@ if ('serviceWorker' in navigator) {
       <span class="muted small">Progetto:</span>
       <button id="btn-rinomina" class="ghost small">Rinomina</button>
       <button id="btn-esporta1" class="ghost small" title="Scarica solo questo progetto (.zip)">⬇ Zip</button>
+        <button id="btn-cubeide" class="ghost small" type="button" title="Scarica questo progetto pronto per STM32CubeIDE (con .project, .cproject, linker, avvio e HAL): File > Import > Existing Projects into Workspace, poi Build">⬇ Per CubeIDE</button>
       <button id="btn-condividi" class="ghost small" title="Un link con una copia di questo progetto (file, dispositivi, breadboard, canali dei Segnali): chi lo apre la prova e può salvarsela. Il tuo progetto non cambia.">🔗 Condividi</button>
       <button id="btn-esercizio" class="ghost small" title="Un link «esercizio»: titolo, consegna e questo progetto come partenza (anche con file in sola lettura)">📝 Esercizio</button>
       <button id="btn-elimina" class="ghost small danger">Elimina</button>
@@ -215,26 +216,226 @@ if ('serviceWorker' in navigator) {
   </section>
 </main>
 
-<dialog id="help">
-  <form method="dialog">
-    <h2>Scheda virtuale nel browser</h2>
-    <p>Il tuo progetto CubeIDE viene compilato <b>qui nella pagina</b> (clang in WebAssembly) con una HAL simulata: GPIO, interrupt EXTI, timer (anche PWM), UART, ADC, SysTick e priorità NVIC. Nessun server: i progetti restano in questo browser, sotto il tuo nome utente.</p>
-    <ol>
-      <li><b>＋ Nuovo</b> crea un progetto vuoto per la NUCLEO-F401RE (LD2, B1 e seriale già pronti): scrivi il codice tra <code>USER CODE BEGIN</code> e <code>END</code>.</li>
-      <li><b>＋ Da esempio…</b> crea un progetto pronto con un display o un sensore I2C/SPI già collegato sulla breadboard (LCD 16x2, OLED, LM75, MPU6050, EEPROM, HC-SR04).</li>
-      <li><b>📁 Cartella</b>: la cartella del progetto CubeIDE (quella con il file <code>.ioc</code>) o un intero workspace (scegli tu quali progetti). <b>🗜 Zip</b>: uno zip del progetto, anche fatto su Windows. Bastano anche solo i file <code>.c</code>/<code>.h</code> con il <code>.ioc</code>: gli header della HAL li mette il sito.</li>
-      <li>Premi <b>▶ Avvia</b>. La prima volta si scarica il compilatore (poi resta in cache e funziona anche senza Internet).</li>
-      <li>Nel <b>Codice</b> modifichi i file (più file aperti a schede, 🔍 o <kbd>Ctrl/⌘+F</kbd> per cercare) e con <b>Salva e avvia</b> o <kbd>Ctrl/⌘+S</kbd> ricompili. Gli errori sono sottolineati in rosso: clicca l'errore in alto per andare alla riga.</li>
-      <li><b>⬇ Tutti</b> scarica uno zip con tutti i tuoi progetti (<b>⬇ Zip</b> solo quello scelto): caricalo su un altro computer con 🗜 Zip.</li>
-    </ol>
-    <h3>Interagire</h3>
-    <ul>
-      <li>Tieni premuto il pulsante blu <b>B1</b> (o il tasto <kbd>B</kbd>), il nero è <b>RESET</b>.</li>
-      <li>Nella scheda <b>Pin</b> trovi un pulsante per ogni ingresso, un LED per ogni uscita, un cursore per ogni canale ADC. Sotto la scheda i <b>Dispositivi</b> (display, encoder, pulsanti, motori…).</li>
-    </ul>
-    <p class="muted small">Limiti del prototipo: gli interrupt partono nei punti in cui il programma consuma tempo (cicli while/for, HAL_Delay, HAL_GetTick), non a metà di un'istruzione; niente debug passo passo e niente scheda Variabili per ora. Micro supportati: STM32F401 e STM32F411 (header HAL STM32Cube F4 V1.28.3).</p>
-    <div class="right"><button class="primary">Ho capito</button></div>
-  </form>
+<dialog id="help" class="guida" aria-labelledby="guida-titolo">
+  <div class="guida-testa">
+    <h2 id="guida-titolo">Guida della Scheda Virtuale</h2>
+    <input id="guida-cerca" type="search" placeholder="Cerca nella guida (es. filo, breakpoint, seriale)…" aria-label="Cerca nella guida" autocomplete="off">
+    <button type="button" class="small" id="guida-giro" title="I 5 passi guidati sullo schermo">Giro guidato</button>
+    <button type="button" class="ghost icona" id="guida-chiudi" aria-label="Chiudi la guida">✕</button>
+  </div>
+  <div class="guida-corpo">
+    <nav class="guida-indice" id="guida-indice" aria-label="Sezioni della guida"></nav>
+    <div class="guida-testo" id="guida-testo">
+      <p class="guida-vuoto muted" hidden>Nessuna sezione parla di questo. Prova con un'altra parola (es. «pin», «timer», «zip»).</p>
+
+      <section data-id="inizio"><h3>Per cominciare</h3>
+        <p>La Scheda Virtuale simula una <b>NUCLEO-F401RE</b> dentro il browser: il tuo progetto STM32CubeIDE viene compilato <b>qui nella pagina</b> (clang in WebAssembly) e gira su una HAL simulata, con una breadboard vera intorno (correnti, tensioni, LED che si accendono).</p>
+        <ol>
+          <li>Apri il menu <b>☰</b> e crea un progetto: <b>＋ Nuovo</b> (vuoto, con LD2, B1 e la seriale già pronti), <b>＋ Da esempio…</b> (codice e circuito già collegati) o carica il tuo progetto CubeIDE (<b>📁 Cartella</b>, <b>🗜 Zip</b>, <b>📂 Collega una cartella</b>).</li>
+          <li>Premi <b>▶ Avvia</b>. La prima volta il sito scarica il compilatore (circa 15 MB): poi resta nel browser e funziona anche senza Internet.</li>
+          <li>Guarda il risultato sul banco, nel <b>monitor seriale</b> e nei <b>Segnali</b>.</li>
+        </ol>
+        <p><b>Account o ospite.</b> Con un account (nome utente e password, oppure Google o GitHub) i progetti si salvano anche online e li ritrovi su ogni computer. Con <b>Continua come ospite</b> non si salva niente: chiudendo la pagina il lavoro si perde (prima scarica lo zip). Senza Internet si lavora sulla copia nel browser e si sincronizza dopo.</p>
+      </section>
+
+      <section data-id="progetti"><h3>Progetti: caricare, collegare, esportare</h3>
+        <ul>
+          <li><b>📁 Cartella</b>: scegli la cartella del progetto CubeIDE (quella con il file <code>.ioc</code>) o un intero workspace (poi scegli quali progetti). Il sito tiene solo <code>Core/</code>, il <code>.ioc</code> e il <code>.cproject</code>: la HAL la mette lui. È una <b>copia</b>: le modifiche non tornano su quella cartella.</li>
+          <li><b>🗜 Zip</b>: uno zip del progetto (anche fatto su Windows) o uno zip esportato da qui.</li>
+          <li><b>📂 Collega una cartella di progetti</b> (Chrome ed Edge su computer): il sito lavora <b>direttamente sui file del disco</b>. Quello che salvi qui finisce sul disco; se salvi in CubeIDE, il sito ricarica il file in un secondo e (se la scheda gira) ricompila. Un file eliminato o rinominato in CubeIDE sparisce anche qui. Se tutti e due avete cambiato lo stesso file, il sito chiede chi vince. Non cancella mai niente sul disco.</li>
+          <li><b>⬇ Zip</b> scarica il progetto aperto, <b>⬇ Tutti</b> tutti i tuoi progetti: per portarli su un altro computer o consegnarli.</li>
+          <li><b>⬇ Per CubeIDE</b>: lo zip di un progetto <b>completo per STM32CubeIDE</b> (con <code>.project</code>, <code>.cproject</code>, linker script, file di avvio e HAL). In CubeIDE: <i>File › Import… › General › Existing Projects into Workspace › Select archive file</i>, scegli lo zip, <i>Finish</i>, poi il martello (Build). Le istruzioni sono anche nel <code>LEGGIMI-CubeIDE.txt</code> dentro lo zip.</li>
+          <li><b>Rinomina</b>, <b>Elimina</b> e <b>⧉ Copia nel mio account</b> (per i progetti della cartella collegata) sono nel cassetto sotto «Progetto:».</li>
+          <li>Il file <code>.breadboard.json</code> nel progetto contiene il circuito del banco: viaggia negli zip e nella cartella collegata, così circuito e codice restano insieme.</li>
+        </ul>
+        <p class="muted small">Doppioni di iCloud: se nella cartella compaiono file come <code>main 2.c</code>, il compilatore dà «multiple definition» (anche in CubeIDE). Il sito te lo segnala nel Registro: elimina il doppione.</p>
+      </section>
+
+      <section data-id="esempi-preset"><h3>Esempi pronti e preset del banco</h3>
+        <p><b>＋ Da esempio…</b> crea un progetto completo, già provato, con codice in stile CubeMX e circuito collegato: LED e pulsante (EXTI con antirimbalzo), timer e interrupt, display 7 segmenti multiplexato, encoder, PWM e servo, ADC e potenziometro, UART con interrupt, motore passo-passo, LCD 16x2 e OLED (I2C e SPI), LM75, MPU6050, EEPROM, HC-SR04. Ogni esempio ha una consegna proposta (utile per gli esercizi).</p>
+        <p><b>▦ Preset</b> (sulla barra del banco) cambia il banco del progetto aperto: breadboard già alimentata a 3,3 V o 5 V, 3,3 V sopra e 5 V sotto, tre breadboard unite e alimentate, mezza breadboard. Con <b>Salva il banco come preset</b> salvi il tuo banco (solo il circuito, oppure anche il codice: allora diventa un progetto pronto). I tuoi preset si rinominano, si eliminano, si esportano in un file <code>.preset.json</code> e si importano; con l'account si ritrovano su tutti i computer. La <b>☆</b> rende un preset quello di partenza per i progetti nuovi.</p>
+      </section>
+
+      <section data-id="codice"><h3>Editor del codice e ricompila</h3>
+        <ul>
+          <li>Il codice è nella scheda <b>Codice</b> del pannello in basso: più file aperti a schede, <kbd>Ctrl/⌘+F</kbd> per cercare.</li>
+          <li><b>Salva e avvia</b> o <kbd>Ctrl/⌘+S</kbd> salva e ricompila. Gli errori sono sottolineati in rosso: clicca l'errore in alto per andare alla riga.</li>
+          <li>Scrivi tra <code>/* USER CODE BEGIN … */</code> e <code>/* USER CODE END … */</code>, come in CubeIDE: il resto lo rifà CubeMX quando cambi i pin nel <code>.ioc</code>.</li>
+          <li>In un esercizio alcuni file possono essere <b>in sola lettura</b> (lo decide il prof).</li>
+        </ul>
+      </section>
+
+      <section data-id="avvio"><h3>Avviare, fermare, velocità</h3>
+        <ul>
+          <li><b>▶ Avvia</b> compila e accende la scheda, <b>⏸ Pausa</b> ferma il tempo simulato, <b>■ Stop</b> spegne, <b>⟲ Reset</b> è il pulsante nero della scheda.</li>
+          <li><b>Velocità</b>: da 0,1× (per vedere bene un lampeggio veloce) a 5×. Il tempo in alto è quello <b>simulato</b>: <code>HAL_Delay(1000)</code> dura 1 s simulato.</li>
+          <li>Il pulsante blu <b>B1</b> si preme col mouse sulla scheda o tenendo premuto il tasto <kbd>B</kbd>.</li>
+          <li>Nella vista <b>Scheda e dispositivi</b> vedi la Nucleo disegnata, i LED LD1/LD2/LD3 e quante volte è scattato ogni interrupt.</li>
+        </ul>
+      </section>
+
+      <section data-id="componenti"><h3>Componenti: piazzare, ruotare, spostare</h3>
+        <ul>
+          <li>Trascina un componente dalla <b>palette</b> a sinistra sulla breadboard, oppure cliccalo e poi clicca dove posarlo. <b>Verde</b> = si aggancia ai fori, <b>rosso</b> = fuori dai fori o posto occupato, <b>arancione</b> = due piedini sulla stessa fila (sarebbero in corto tra loro).</li>
+          <li><kbd>R</kbd> ruota di 90° (anche mentre lo stai posando o spostando), <kbd>M</kbd> sposta, <kbd>C</kbd> copia, <kbd>Canc</kbd> elimina, <kbd>Esc</kbd> annulla il comando.</li>
+          <li>Clic su un componente: le sue <b>proprietà</b> (valore della resistenza, colore del LED…). Doppio clic su strumenti e sensori: il loro pannello.</li>
+          <li>Trascina sul vuoto per selezionare più cose; <kbd>Ctrl/⌘</kbd>+clic aggiunge o toglie.</li>
+          <li><b>Breadboard</b>: nella palette c'è anche la mezza (400) e il modulo di binari. Posata vicino a un'altra si attacca di fianco, sopra o sotto; come quelle vere restano separate finché non le unisci con un filo.</li>
+          <li>Encoder e potenziometro si girano con la rotella del mouse sopra la manopola; i pulsanti si tengono premuti col mouse.</li>
+        </ul>
+      </section>
+
+      <section data-id="fili"><h3>Fili</h3>
+        <ul>
+          <li>Clic su un foro o su un pin della Nucleo, poi clic sull'arrivo: il filo si fa da solo a 90°, <b>rosso</b> per 5V/3V3, <b>nero</b> per GND. Clic su un punto vuoto o <kbd>Alt</kbd>+clic su un foro = un angolo in quel punto.</li>
+          <li><kbd>W</kbd> fa partire un filo dal foro sotto il mouse. <kbd>Canc</kbd> durante il filo toglie l'ultimo angolo.</li>
+          <li>Per cambiarlo: trascina un estremo per spostarlo, trascina il filo per piegarlo, doppio clic su un angolo per toglierlo, colore dalla tavolozza in alto.</li>
+          <li>Passando sopra un foro, la riga in basso dice a cosa è collegato e la sua tensione.</li>
+        </ul>
+      </section>
+
+      <section data-id="strumenti"><h3>Strumenti da banco</h3>
+        <ul>
+          <li><b>Multimetro</b>: V (10 MΩ), A (va messo in serie, 0,1 Ω), Ω (a circuito spento, con 1 mA di prova), DC o AC efficace.</li>
+          <li><b>Oscilloscopio</b> a 2 canali: V/div, s/div, posizione, trigger su A o B (salita/discesa, livello, auto/normale/singolo), cursori T1/T2.</li>
+          <li><b>Generatore di funzioni</b>: sinusoide, quadra, triangolare fino a 20 kHz, ampiezza e offset (50 Ω).</li>
+          <li><b>Alimentatore</b> 0–12 V con limite di corrente (CV/CC).</li>
+          <li>Doppio clic su uno strumento apre il suo pannello. Se il circuito è troppo pesante per il tempo reale, la riga in basso lo dice («al X% del tempo reale»).</li>
+        </ul>
+      </section>
+
+      <section data-id="schema"><h3>Schema elettrico</h3>
+        <ul>
+          <li>La vista <b>Schema</b> (tasto <kbd>V</kbd>) disegna lo stesso circuito in simboli IEC, sempre sincronizzato con la breadboard.</li>
+          <li>Trascina simboli, masse e alimentazioni; trascina un tratto di filo per piegarlo; <kbd>R</kbd> ruota; doppio clic torna alla posizione automatica; <b>Disponi</b> rimette tutto in ordine; i fili si possono colorare come sulla breadboard.</li>
+          <li>Con lo strumento <b>Filo</b> (<kbd>W</kbd>) collegando due piedini nello schema crei un filo vero sulla breadboard. Dalla palette puoi posare componenti anche nello schema.</li>
+          <li><b>PNG</b> scarica lo schema (o il montaggio) su fondo bianco, per le relazioni.</li>
+        </ul>
+      </section>
+
+      <section data-id="dispositivi"><h3>Scheda, dispositivi e pin</h3>
+        <ul>
+          <li><b>Dispositivi</b> (vista Scheda e dispositivi): display 7 segmenti, encoder, pulsanti, LED, barre, motori passo-passo, servo, motore DC, buzzer, tastierino, collegati direttamente ai pin senza breadboard. Se il <code>.ioc</code> ha etichette come <code>SEG_A…SEG_G</code>, <code>DIG1…</code>, <code>CLK/DT</code> il sito li crea da solo.</li>
+          <li>Scheda <b>Pin</b>: per ogni pin usato, lo stato; un pulsante per ogni ingresso, un LED per ogni uscita, un cursore per ogni canale ADC, il PWM dei timer.</li>
+          <li>Scheda <b>Registro</b>: messaggi del laboratorio (corto, LED senza resistenza, pin oltre 25 mA, HAL_Delay dentro un interrupt…) e del compilatore.</li>
+        </ul>
+      </section>
+
+      <section data-id="segnali"><h3>Analizzatore logico (Segnali)</h3>
+        <ul>
+          <li>Fino a 16 canali: il sito sceglie da solo i pin che cambiano (o fanno PWM), poi le uscite con etichetta; <b>Auto</b> torna alla scelta automatica, oppure scegli tu.</li>
+          <li>Rotella o <b>+/−</b> per lo zoom, trascina per spostarti, <b>Tutto</b> per vedere tutto, <b>Pausa</b>/<b>Riprendi</b>.</li>
+          <li>Cursori <b>A</b> e <b>B</b> agganciati ai fronti: Δt e frequenza. Trigger sul fronte di salita o discesa (anche sull'onda PWM).</li>
+          <li>I2C e SPI: le raffiche di SCL/SDA e SCK/MOSI si vedono con i byte decodificati sopra il canale (es. «27 W»).</li>
+          <li><b>Esporta CSV</b>: i fronti della finestra visibile (tempo in µs, separatore «;»), da aprire in Excel.</li>
+        </ul>
+      </section>
+
+      <section data-id="seriale"><h3>Monitor seriale</h3>
+        <ul>
+          <li>Quello che il programma manda con <code>HAL_UART_Transmit</code> o <code>printf</code> (con <code>__io_putchar</code> su USART2) compare nella scheda <b>Seriale</b>.</li>
+          <li>Per mandare: scrivi in basso e premi <b>Invia</b>; scegli il terminatore (nessuno, CR, LF, CR+LF) come nel tuo programma.</li>
+          <li>Vista <b>Testo</b> o <b>HEX</b>, ora simulata accanto a ogni riga, <b>Scarica .txt</b>, baud del monitor (avviso se è diverso da quello di <code>HAL_UART_Init</code>).</li>
+          <li><b>🔌 Scheda vera</b>: lo stesso monitor collegato alla Nucleo vera via USB (vedi «Scheda vera via USB»).</li>
+        </ul>
+      </section>
+
+      <section data-id="debug"><h3>Debug passo passo</h3>
+        <ul>
+          <li><b>⏯ Debug</b> compila per il debug e si ferma sulla prima riga di <code>main()</code>.</li>
+          <li><b>Breakpoint</b>: clic sul numero di riga. Se la riga non ha istruzioni (riga vuota, commento, graffa, intestazione di una funzione) il pallino diventa vuoto e si ferma sulla prima istruzione dopo. Clic destro: breakpoint con <b>condizione</b> (es. <code>i == 5</code>) o «dalla volta n».</li>
+          <li><b>Continua</b> <kbd>F5</kbd>, <b>Passo sopra</b> <kbd>F10</kbd> (esegue la riga senza entrare nelle funzioni), <b>Entra</b> <kbd>F11</kbd> (entra nella funzione chiamata, se è del tuo codice), <b>Esci</b> <kbd>⇧F11</kbd> (finisce la funzione e torna a chi l'ha chiamata), <b>Pausa</b>, <b>Ferma</b>.</li>
+          <li>Durante un passo gli interrupt continuano a scattare (il SysTick conta, i timer girano) ma il passo <b>non si ferma dentro un interrupt</b>, come in CubeIDE; per fermarti in una callback metti lì un breakpoint. Da un breakpoint dentro un interrupt, i passi restano nell'interrupt e alla fine tornano al codice interrotto.</li>
+          <li>Da fermi il <b>tempo simulato non avanza</b>: puoi guardare con calma, <code>HAL_Delay</code> e <code>HAL_GetTick</code> restano giusti.</li>
+          <li>Scheda <b>Variabili</b>: stack delle chiamate, variabili locali (anche parametri e variabile del <code>for</code>), globali, struct campo per campo, enum per nome, periferiche (<code>GPIOA->ODR</code>, <code>TIM3->CNT</code>, <code>htim3.Instance->CNT</code>), espressioni in «Da osservare» (es. <code>a * 2 + 1</code>, <code>GPIOA->ODR &amp; 0x20</code>). Doppio clic su un valore per cambiarlo.</li>
+          <li>«Esci» si ferma sull'istruzione <b>dopo</b> la chiamata (CubeIDE a volte si ferma ancora sulla stessa riga, a metà).</li>
+        </ul>
+      </section>
+
+      <section data-id="condividi"><h3>Condividere ed esercizi</h3>
+        <ul>
+          <li><b>🔗 Condividi</b>: un link con una copia del progetto (file, dispositivi, breadboard, canali dei Segnali). Chi lo apre lo prova e può salvarselo; il tuo progetto non cambia. Con l'account il link diventa corto, con il QR code.</li>
+          <li><b>📝 Esercizio</b>: un link con titolo, consegna e progetto di partenza; puoi rendere alcuni file in sola lettura.</li>
+          <li>Il link contiene il progetto stesso (dopo il <code>#</code>): non passa da nessun server e funziona anche senza account.</li>
+        </ul>
+      </section>
+
+      <section data-id="classi"><h3>Classi (prof e studenti)</h3>
+        <ul>
+          <li><b>🎓 Classi</b> nel cassetto. Lo studente entra con il <b>codice d'invito</b> di 6 caratteri del prof, apre l'esercizio (diventa un suo progetto) e preme <b>Consegna</b>.</li>
+          <li>Il prof (nominato dall'amministratore) crea la classe, dà esercizi (dal progetto aperto o dalla galleria, con scadenza e file in sola lettura), vede chi ha consegnato e chi no, apre i progetti e lascia voto e commento. Il creatore della classe può aggiungere altri prof.</li>
+          <li>Serve l'account. Ognuno vede solo le sue consegne; il prof solo le sue classi.</li>
+        </ul>
+      </section>
+
+      <section data-id="scheda-vera"><h3>Scheda vera via USB</h3>
+        <ul>
+          <li>Serve <b>Chrome o Edge su computer</b> (non Safari, Firefox o il telefono).</li>
+          <li><b>Monitor seriale</b>: nella scheda Seriale premi <b>🔌 Scheda vera</b> e scegli la porta dello ST-LINK. Stessa vista del simulatore (Testo/HEX, ora, terminatore).</li>
+          <li><b>⬆ Sulla scheda…</b> (nel cassetto): il sito <b>non sa compilare per il processore ARM</b>, quindi il programma lo compila CubeIDE (Build → <code>Debug/nome.elf</code>). Il sito controlla il file, lo trasforma in <code>.bin</code> e lo scrive sul disco <b>NODE_F401RE</b> che compare quando colleghi la Nucleo (o te lo fa scaricare da trascinare a mano). Con la cartella collegata prende da solo il <code>.elf</code> di <code>Debug/</code> e ti avvisa se hai salvato i sorgenti dopo l'ultima Build.</li>
+        </ul>
+      </section>
+
+      <section data-id="mobile"><h3>Telefono e tablet</h3>
+        <ul>
+          <li><b>＋ Componente</b> apre la palette; tocca un componente e poi la breadboard. La barretta in basso ha Ruota, Copia, Elimina, Annulla; tieni premuto un componente per il suo menu.</li>
+          <li>Un dito sul vuoto sposta la vista, due dita fanno zoom. Il filo: tocca il foro di partenza e quello d'arrivo.</li>
+          <li>Il pannello in basso (Codice, Seriale, Segnali…) si trascina in su; Reset, Debug e velocità sono nel menu <b>⋯</b>. Sull'iPad in orizzontale il pannello sta di lato.</li>
+          <li>Il sito si può installare come app (pulsante «Installa l'app» nel cassetto) e funziona anche offline.</li>
+        </ul>
+      </section>
+
+      <section data-id="scorciatoie"><h3>Scorciatoie da tastiera (come AutoCAD)</h3>
+        <table class="guida-tasti">
+          <tr><td><kbd>R</kbd></td><td>ruota la selezione di 90° (anche mentre posi o sposti)</td></tr>
+          <tr><td><kbd>M</kbd> / <kbd>C</kbd></td><td>sposta / copia la selezione: muovi il mouse e clicca</td></tr>
+          <tr><td><kbd>W</kbd></td><td>filo dal foro sotto il mouse</td></tr>
+          <tr><td><kbd>Canc</kbd> o <kbd>⌫</kbd></td><td>elimina (durante un filo: toglie l'ultimo angolo)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>annulla il comando, poi toglie la selezione</td></tr>
+          <tr><td><kbd>F</kbd></td><td>adatta tutto alla finestra</td></tr>
+          <tr><td><kbd>V</kbd></td><td>cambia vista: Breadboard → Schema → Scheda e dispositivi</td></tr>
+          <tr><td><kbd>B</kbd> (tenuto)</td><td>preme B1 sulla scheda</td></tr>
+          <tr><td>rotella</td><td>zoom sul puntatore (sulla manopola di encoder e potenziometro: la gira)</td></tr>
+          <tr><td>rotella premuta o <kbd>Maiusc</kbd>+trascina</td><td>sposta la vista</td></tr>
+          <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>annulla / ripeti</td></tr>
+          <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>C</kbd> <kbd>V</kbd> <kbd>D</kbd> <kbd>A</kbd></td><td>copia, incolla, duplica, seleziona tutto</td></tr>
+          <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>S</kbd></td><td>salva e ricompila (nell'editor)</td></tr>
+          <tr><td><kbd>F5</kbd> <kbd>F10</kbd> <kbd>F11</kbd> <kbd>⇧F11</kbd></td><td>debug: continua, passo sopra, entra, esci</td></tr>
+          <tr><td><kbd>?</kbd></td><td>elenco dei comandi del banco</td></tr>
+        </table>
+      </section>
+
+      <section data-id="limiti"><h3>Cosa si può e cosa non si può fare</h3>
+        <p><b>Si simula</b>: GPIO (anche open drain e pull-up/down), EXTI e priorità NVIC, SysTick, <code>HAL_Delay</code>/<code>HAL_GetTick</code>, timer (base, interrupt, PWM, output compare, input capture, encoder, contatore che avanza al µs), UART (polling, interrupt, DMA, <code>printf</code>), ADC (polling, interrupt, DMA), I2C e SPI veri (ACK/NACK, tempi al baud, pull-up), i dispositivi della palette, il clock (RCC/PLL fino a 84 MHz). Micro: STM32F401 e STM32F411 (HAL STM32Cube F4 V1.28.3).</p>
+        <p><b>Non si può</b>:</p>
+        <ul>
+          <li><b>compilare per il processore ARM</b>: il sito compila per il computer (WebAssembly). Il <code>.elf</code> per la scheda vera lo fa CubeIDE;</li>
+          <li>simulare periferiche che la HAL simulata non conosce: DAC, RTC, watchdog (IWDG/WWDG), scrittura della flash, USB, CAN, modi a basso consumo, CRC/RNG; gli interrupt di queste non arrivano;</li>
+          <li>interrompere a metà di un'istruzione: gli interrupt scattano nei punti in cui il programma «spende tempo» (cicli <code>while</code>/<code>for</code>, <code>HAL_Delay</code>, <code>HAL_GetTick</code>, chiamate alla HAL). Un ciclo vuoto senza niente dentro conta comunque il tempo;</li>
+          <li>avere i tempi esatti al ciclo di clock: le istruzioni costano un tempo medio (la HAL dei GPIO costa come sulla scheda); i tempi dei timer, della seriale, di I2C/SPI invece sono quelli veri;</li>
+          <li>rigenerare il codice dal <code>.ioc</code> o cambiare i pin come in CubeMX: per questo serve CubeIDE (il sito legge il <code>.ioc</code> per nomi ed etichette);</li>
+          <li>fare il debug sulla scheda vera (il debug passo passo è sul simulatore);</li>
+          <li>usare la cartella collegata e la scheda vera su Safari, Firefox e telefoni (lì vanno Zip e Cartella in copia).</li>
+        </ul>
+        <p>Qualcosa non torna con la scheda vera? Premi <b>🐞 Segnala</b>: arriva a chi cura il sito, con il progetto se vuoi.</p>
+      </section>
+
+      <section data-id="problemi"><h3>Problemi frequenti</h3>
+        <ul>
+          <li><b>«multiple definition»</b>: due file con le stesse funzioni, spesso un doppione di iCloud (<code>main 2.c</code>). Eliminalo.</li>
+          <li><b>Il LED non si accende</b>: verso del LED (anodo verso il +), resistenza in serie, filo sulla fila giusta (passa sopra un foro: la riga in basso dice a cosa è collegato). Guarda il Registro.</li>
+          <li><b>Il programma resta fermo</b>: un <code>HAL_Delay</code> dentro un interrupt con priorità più alta del SysTick, o con gli interrupt disabilitati, blocca anche la scheda vera: il Registro lo segnala.</li>
+          <li><b>Il monitor seriale scrive caratteri strani</b>: baud del monitor diverso da quello del programma.</li>
+          <li><b>La prima compilazione è lenta</b>: si sta scaricando il compilatore; le volte dopo bastano 2–3 secondi.</li>
+          <li><b>«Nuova versione del sito»</b>: ricarica la pagina quando ti fa comodo; i progetti restano.</li>
+        </ul>
+      </section>
+
+      <section data-id="dati"><h3>Account e dati</h3>
+        <p>I progetti stanno nel tuo browser e, con l'account, anche online (Supabase, in Europa): li vedi solo tu. Le segnalazioni le legge solo l'amministratore. Dal menu <b>Il tuo account</b> cambi la password, colleghi Google/GitHub o elimini l'account con tutti i dati. Dettagli nella pagina <a href="privacy.html" target="_blank" rel="noopener">Privacy</a>.</p>
+      </section>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="segnala" class="segnala">
@@ -390,6 +591,7 @@ if ('serviceWorker' in navigator) {
   <p class="small">Il sito non sa compilare per il processore ARM della scheda (simula il programma sul computer). Il file da caricare lo fa
   <b>CubeIDE</b>: dopo «Build» è nella cartella <code>Debug</code> del progetto (<code>nome_progetto.elf</code>). Il sito lo controlla, lo
   trasforma in <code>.bin</code> e lo copia sul disco <b>NODE_F401RE</b> che compare quando colleghi la Nucleo: la scheda lo scrive da sola e riparte.</p>
+  <p class="small" data-cartella hidden></p>
   <p><label class="small">File compilato (.elf, .hex o .bin) <input type="file" data-file accept=".elf,.hex,.bin"></label></p>
   <ul class="carica-controlli small" data-controlli></ul>
   <p class="small" data-esito aria-live="polite"></p>
@@ -400,6 +602,6 @@ if ('serviceWorker' in navigator) {
     <button type="button" onclick="this.closest('dialog').close()">Chiudi</button>
   </div>
 </dialog>
-<script type="module" src="local-server.js?v=2026-11-26e"></script>
+<script type="module" src="local-server.js?v=2026-11-26q"></script>
 </body>
 </html>

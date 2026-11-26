@@ -3,18 +3,19 @@
 // ascoltano /api/events. Qui fetch ed EventSource vengono intercettati e la
 // stessa API è fatta con IndexedDB (progetti per nome utente), un worker che
 // compila (clang in WebAssembly) e un worker che esegue la scheda.
-import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-26e';
-import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-26e';
-import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-26e';
+import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-26q';
+import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-26q';
+import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-26q';
 import { unzipSync, zipSync } from '../vendor/fflate/esm/browser.js';
 
 const dec = new TextDecoder();
 
-import * as CFG from './config.js?v=2026-11-26e';
-import { supabaseRemote, fintoRemote, leggiCorto } from './remote.js?v=2026-11-26e';
-import { sincronizza } from './sync.js?v=2026-11-26e';
-import { leggiLink, esercizioPulito } from './link.js?v=2026-11-26e';
-import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-26e';
+import * as CFG from './config.js?v=2026-11-26q';
+import { supabaseRemote, fintoRemote, leggiCorto } from './remote.js?v=2026-11-26q';
+import { sincronizza } from './sync.js?v=2026-11-26q';
+import { leggiLink, esercizioPulito } from './link.js?v=2026-11-26q';
+import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-26q';
+import { progettoCubeIDE } from './cubeide.js?v=2026-11-26q';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -195,6 +196,13 @@ async function controllaCartella(nome) {
       prima[rel] = x;
     }
   }
+  // file tolti dal disco (es. rinominati o eliminati in CubeIDE): via anche dal sito, se no si compilerebbero ancora
+  cambiati.eliminati = [];
+  for (const rel of Object.keys(prima)) {
+    if (rel === '.scheda-virtuale.json' || letto.file[rel]) continue;
+    delete prima[rel]; delete p.rec.files[rel];
+    cambiati.push(rel); cambiati.eliminati.push(rel);
+  }
   if (cambiati.length) p.rec.modified = Date.now();
   return cambiati;
 }
@@ -363,7 +371,7 @@ function absorb(line) {
 
 // ------------------------------------------------------------------
 // Compilatore (worker che resta vivo: il clang da ~100 MB si carica una volta sola)
-const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-26e', import.meta.url), { type: 'module' });
+const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-26q', import.meta.url), { type: 'module' });
 let compSeq = 0;
 const compPending = new Map();
 let compReady = false;
@@ -415,7 +423,7 @@ function startSim(wasm) {
   state.startedAt = Date.now();
   state.paused = false;
   const sab = makeInput();
-  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-26e', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-26q', import.meta.url), { type: 'module' });
   const s = { worker, sab };
   sim = s;
   let buf = '', batch = [], flushT = null;
@@ -470,6 +478,8 @@ async function runProject(id, debug = false) {
   stopSim();
   setStatus('building', { project: { id: inf.id, name: inf.name, workspace: inf.workspace, path: inf.path }, source: 'ui', buildErrors: [], debug });
   log('info', `Compilo ${inf.name}${debug ? ' per il debug' : ''}` + (compReady ? '' : ' (prima scarico il compilatore)'));
+  // doppioni creati da iCloud ("main 2.c" accanto a "main.c"): si compilano tutti e due → "multiple definition"
+  for (const k of Object.keys(rec.files)) { const m = k.match(/^(.*) \d+(\.[ch])$/); if (m && rec.files[m[1] + m[2]]) log('warn', `${k} sembra un doppione di ${m[1] + m[2]} creato da iCloud: se il compilatore dice «multiple definition», eliminalo dalla cartella (in CubeIDE dà lo stesso errore).`); }
   const t0 = performance.now();
   const r = await compile(rec.files, debug);
   for (const n of r.notes || []) log('info', n);
@@ -658,6 +668,24 @@ window.SV = {
     async scollega() { CARTELLA.prog.clear(); CARTELLA.radice = null; CARTELLA.stato = 'nessuna'; CARTELLA.nome = ''; if (!OSPITE) await tx('readwrite', s => s.delete(user), 'cartelle'); },
     ricarica: () => caricaCartella(),
     controlla: nome => controllaCartella(nome),
+    // il .elf che CubeIDE ha messo in Debug/ (o Release/) del progetto collegato: { nome, buf, quando, vecchio }
+    // vecchio = qualche sorgente è stato salvato dopo il .elf (serve rifare Build in CubeIDE)
+    async elf(nome) {
+      const p = CARTELLA.prog.get(nome);
+      if (!p) return null;
+      let migliore = null;
+      for (const cart of ['Debug', 'Release']) {
+        let d; try { d = await p.dir.getDirectoryHandle(cart); } catch { continue; }
+        for await (const [n, h] of d.entries()) {
+          if (h.kind !== 'file' || !/\.elf$/i.test(n)) continue;
+          const f = await h.getFile();
+          if (!migliore || f.lastModified > migliore.f.lastModified) migliore = { f, rel: cart + '/' + n };
+        }
+      }
+      if (!migliore) return null;
+      const sorgenti = Math.max(0, ...Object.entries(p.file).filter(([r]) => /\.(c|h|ioc)$/.test(r)).map(([, x]) => x.mtime));
+      return { nome: migliore.rel, buf: await migliore.f.arrayBuffer(), quando: migliore.f.lastModified, vecchio: sorgenti > migliore.f.lastModified };
+    },
     // "Copia nel mio account": un progetto normale con gli stessi file (nome libero)
     async copia(nome) {
       const p = CARTELLA.prog.get(nome);
@@ -718,14 +746,17 @@ window.SV = {
   // progetto nuovo dal modello Nucleo-F401RE (modello/nucleo-f401re.json)
   // esempio: id di public/esempi (progetto pronto con il circuito della breadboard)
   async newProject(nome, esempio) {
-    const m = await (await fetch(esempio ? `esempi/${encodeURIComponent(esempio)}.json?v=2026-11-26e` : 'modello/nucleo-f401re.json?v=2026-11-26e')).json();
+    const m = await (await fetch(esempio ? `esempi/${encodeURIComponent(esempio)}.json?v=2026-11-26q` : 'modello/nucleo-f401re.json?v=2026-11-26q')).json();
     nome = await freeName(nome || m.nome);
     const enc = new TextEncoder(), files = {};
     for (const [k, v] of Object.entries(m.files)) {
       if (k.endsWith('.ioc')) files[nome + '.ioc'] = enc.encode(v.replace(/^ProjectManager\.ProjectName=.*$/m, 'ProjectManager.ProjectName=' + nome));
       else files[k] = enc.encode(v);
     }
-    await userPut({ utente: user, nome, files, devices: null, sync: {} });
+    // esempi con Dispositivi che sulla breadboard non ci sono (es. lo stepper): pin presi dalle etichette del .ioc
+    let devices = null;
+    if (Array.isArray(m.dispositivi)) { const ioc = iocOf({ files }); devices = []; for (const t of m.dispositivi) if (DEV_TYPES[t]) devices.push(makeDevice(t, ioc, devices)); }
+    await userPut({ utente: user, nome, files, devices, sync: {} });
     return nome;
   },
   async rename(nome, nuovo) {
@@ -766,6 +797,14 @@ window.SV = {
     const all = nome ? [await dbGet(nome)] : await dbAll(), tree = {};
     for (const r of all) projZip(r, tree, `${r.nome}/`);
     return zipSync(tree, { level: 6 });
+  },
+  // un progetto come progetto STM32CubeIDE completo (cubeide.js): { nome, zip, avvisi }
+  async exportCubeIDE(nome) {
+    const rec = await dbGet(nome);
+    if (!rec) throw new Error('progetto non trovato');
+    const [hal, cube] = await Promise.all(['../vendor/stm32f4/pacchetto.json', '../vendor/stm32f4/cubeide-f401re.json'].map(async u => { const r = await fetch(u); if (!r.ok) throw new Error('non riesco a scaricare ' + u.split('/').pop()); return r.json(); }));
+    const { nome: n, tree, avvisi } = progettoCubeIDE(rec, hal, cube);
+    return { nome: n, zip: zipSync(tree, { level: 6 }), avvisi };
   },
   log,
   // --- Condividi / Esercizio (condividi.js) ---
@@ -861,7 +900,7 @@ if (ANTEPRIMA) await preparaAnteprima();
 else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
-  const { accedi } = await import('./auth.js?v=2026-11-26e');
+  const { accedi } = await import('./auth.js?v=2026-11-26q');
   account = await accedi(remote);
   if (account && account.ospite) {
     // localStorage dell'ospite: solo in memoria (temi, schede, guida… non restano nel browser)
@@ -888,22 +927,24 @@ else if (ACCOUNT) {
 }
 const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
 const portati = ACCOUNT ? await portaDaOspite() : [];
-for (const s of ['devices.js?v=2026-11-26e', 'nucleo.js?v=2026-11-26e', 'app.js?v=2026-11-26e', 'analizzatore.js?v=2026-11-26e', 'web-ui.js?v=2026-11-26e']) await loadScript(s);
-await import('./editor.js?v=2026-11-26e');
-await import('./scheda-vera.js?v=2026-11-26e');
-await import('./classi.js?v=2026-11-26e');
-await import('./condividi.js?v=2026-11-26e');
-await import('./debug.js?v=2026-11-26e');
-await import('./breadboard.js?v=2026-11-26e');
-await import('./segnala.js?v=2026-11-26e');
-await import('./schema.js?v=2026-11-26e');
-await import('./layout.js?v=2026-11-26e');
-await import('./aggiorna.js?v=2026-11-26e');
-await import('./cartella.js?v=2026-11-26e');
-await import('./tocco.js?v=2026-11-26e');
+for (const s of ['devices.js?v=2026-11-26q', 'nucleo.js?v=2026-11-26q', 'app.js?v=2026-11-26q', 'analizzatore.js?v=2026-11-26q', 'web-ui.js?v=2026-11-26q']) await loadScript(s);
+await import('./editor.js?v=2026-11-26q');
+await import('./scheda-vera.js?v=2026-11-26q');
+await import('./preset.js?v=2026-11-26q');
+await import('./guida.js?v=2026-11-26q');
+await import('./classi.js?v=2026-11-26q');
+await import('./condividi.js?v=2026-11-26q');
+await import('./debug.js?v=2026-11-26q');
+await import('./breadboard.js?v=2026-11-26q');
+await import('./segnala.js?v=2026-11-26q');
+await import('./schema.js?v=2026-11-26q');
+await import('./layout.js?v=2026-11-26q');
+await import('./aggiorna.js?v=2026-11-26q');
+await import('./cartella.js?v=2026-11-26q');
+await import('./tocco.js?v=2026-11-26q');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (portati.length) { log('info', `Portati nel tuo account dalla sessione da ospite: ${portati.join(', ')}`); await loadProjects(); await selectProject(portati[0]); }
-if (OSPITE) await import('./ospite.js?v=2026-11-26e');
+if (OSPITE) await import('./ospite.js?v=2026-11-26q');
 if (ANTEPRIMA || salvato) {
   await loadProjects();
   await selectProject(ANTEPRIMA ? LINK.nome : salvato);

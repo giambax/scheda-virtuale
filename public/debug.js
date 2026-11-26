@@ -370,6 +370,6 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'F11') { e.preventDefault(); passo(e.shiftKey ? 'o' : 's'); }
 });
 document.querySelector('.tab[data-tab="vars"]').textContent = 'Debug';
-window.SVdbg = { statoBP, cambiaBP, opzioniBP, rigaCorrente, D, passo, osserva, codifica };
+window.SVdbg = { statoBP, cambiaBP, opzioniBP, rigaCorrente, rigaVera, mandaBP, D, passo, osserva, codifica };
 caricaProgetto();
 if (window.SVeditor) SVeditor.ridisegnaDbg();

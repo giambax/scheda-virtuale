@@ -172,6 +172,7 @@ export function strumenta(src, idFile) {
   let aspetta = 'no';                  // 'si' = qui comincia un'istruzione; 'nohook' = sotto-istruzione senza graffe
   let intestazione = null, parIntest = -1, caso = false, stmtIni = -1, dentroDo = [];
   let ultimoBloccoDo = false;
+  let forIni = -1, forDecl = null;     // "for (int i = …; …)": la variabile del for si registra all'inizio del corpo
   let fileStmt = [];                   // gettoni dell'istruzione a livello di file (per globali e funzioni)
   const inCodice = () => graffe.length && graffe[graffe.length - 1] !== 'd';
   for (let k = 0; k < g.length; k++) {
@@ -181,7 +182,8 @@ export function strumenta(src, idFile) {
     if (inCodice() && par === 0 && qua === 0 && (aspetta === 'si' || aspetta === 'nohook')) {
       const hook = aspetta === 'si';
       aspetta = 'no';
-      if (x.t === '{') { graffe.push('c'); dentroDo.push(ultimoBloccoDo); ultimoBloccoDo = false; aspetta = 'si'; continue; }
+      const fd = forDecl; forDecl = null;
+      if (x.t === '{') { graffe.push('c'); dentroDo.push(ultimoBloccoDo); ultimoBloccoDo = false; aspetta = 'si'; if (fd) ins.push([x.fin, fd.map(v => reg('__svl', v)).join('')]); continue; }
       if (x.t === '}' || x.t === ';') { k--; continue; }   // gestiti sotto
       if (x.t === 'else') { aspetta = 'nohook'; continue; }
       if (x.t === 'case' || x.t === 'default') { caso = true; continue; }
@@ -189,12 +191,13 @@ export function strumenta(src, idFile) {
       if (x.t === 'while' && prev && prev.t === '}' && g[k - 1].doChiuso) { stmtIni = k; continue; }               // "} while (…);" del do
       if (hook && !righe.has(x.riga)) { ins.push([x.ini, `__svr(${(idFile + 1) * 100000 + x.riga});`]); righe.add(x.riga); }
       stmtIni = k;
-      if (KW_CTRL.has(x.t)) { intestazione = x.t; parIntest = par; }
+      if (KW_CTRL.has(x.t)) { intestazione = x.t; parIntest = par; forIni = -1; }
       else if (x.t === 'do') { aspetta = 'nohook'; ultimoBloccoDo = true; stmtIni = -1; }
       continue;
     }
     if (livelloFile && x.t !== ';' && x.t !== '{') fileStmt.push(x);
-    if (x.t === '(') { par++; continue; }
+    if (x.t === '(') { par++; if (intestazione === 'for' && par === parIntest + 1 && forIni === -1) forIni = k + 1; continue; }
+    if (x.t === ';' && intestazione === 'for' && par === parIntest + 1 && forIni >= 0) { const d = k > forIni ? dichiarazione(g.slice(forIni, k)) : null; forDecl = d && d.length ? d : null; forIni = -2; }
     if (x.t === ')') {
       par--;
       if (intestazione && par === parIntest) { intestazione = null; aspetta = 'nohook'; stmtIni = -1; }
@@ -268,7 +271,10 @@ export function strumenta(src, idFile) {
     }
   }
   // inserimenti dal fondo, così le posizioni restano giuste; tutto sulla stessa riga
-  ins.sort((a, b) => b[0] - a[0]);
+  // a parità di posizione prima quello aggiunto dopo, così nel testo resta l'ordine di aggiunta (es. __sve prima di __svr
+  // in una funzione scritta tutta su una riga)
+  ins.forEach((x, i) => x.push(i));
+  ins.sort((a, b) => b[0] - a[0] || b[2] - a[2]);
   let out = src;
   for (const [p, t] of ins) out = out.slice(0, p) + t + out.slice(p);
   const coda = globali.map(v => reg('__svg', v)).join('') +

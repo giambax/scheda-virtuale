@@ -14,8 +14,8 @@ const SEG_DIGIT = { 0x3F: '0', 0x06: '1', 0x5B: '2', 0x4F: '3', 0x66: '4', 0x6D:
   0x77: 'A', 0x39: 'C', 0x5E: 'd', 0x79: 'E', 0x71: 'F', 0x76: 'H', 0x38: 'L', 0x73: 'P', 0x3E: 'U', 0x40: '-', 0x5C: 'o', 0x54: 'n', 0x50: 'r', 0x00: ' ' };
 
 const DEV_INFO = {
-  seg7mux: { name: 'Display 7 segmenti multiplexato', short: 'Display a più cifre' },
-  seg7: { name: 'Display 7 segmenti (1 cifra)', short: 'Display 1 cifra' },
+  seg7mux: { name: 'Display 7 segmenti multiplexato', short: '7 segmenti, più cifre' },
+  seg7: { name: 'Display 7 segmenti (1 cifra)', short: '7 segmenti, 1 cifra' },
   encoder: { name: 'Encoder rotativo KY-040', short: 'Encoder KY-040' },
   button: { name: 'Pulsante', short: 'Pulsante' },
   led: { name: 'LED', short: 'LED' },
@@ -26,7 +26,7 @@ const DEV_INFO = {
   a4988: { name: 'Motore passo-passo + A4988/DRV8825', short: 'Stepper con A4988/DRV8825' },
   servo: { name: 'Servo SG90', short: 'Servo SG90 (PWM)' },
   dc: { name: 'Motore DC + L298N', short: 'Motore DC (L298N)' },
-  buzzer: { name: 'Buzzer', short: 'Buzzer' },
+  buzzer: { name: 'Buzzer attivo', short: 'Buzzer' },
   keypad: { name: 'Tastierino 4×4', short: 'Tastierino 4×4' },
 };
 const ROLE_NAME = { pin: 'pin', clk: 'CLK', dt: 'DT', sw: 'SW', step: 'STEP', dir: 'DIR', en: 'EN', ena: 'ENA', r: 'R', g: 'G', b: 'B', dp: 'DP' };

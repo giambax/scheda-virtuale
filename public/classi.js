@@ -5,7 +5,7 @@
 // consegna) e consegna; il prof vede l'elenco delle consegne, apre i progetti e lascia commento e voto.
 // Dati su Supabase con supabase/migrazione-5-classi.sql (SV.remote.classi); prima che sia applicata il
 // pannello lo dice e il resto del sito funziona come prima. Tutti i testi degli utenti vanno in textContent.
-import { CLASSI_ASSENTE } from './remote.js?v=2026-11-26e';
+import { CLASSI_ASSENTE } from './remote.js?v=2026-11-26q';
 
 const dlg = document.getElementById('classi-dlg');
 const corpo = dlg.querySelector('[data-corpo]');
@@ -133,9 +133,9 @@ function sezioneNuovoEsercizio(k) {
   const fonte = el('select', { 'aria-label': 'Progetto di partenza', 'data-fonte': '' }, el('option', { value: '' }, `Progetto aperto (${S.selId || 'nessuno'})`));
   const sola = el('div', { class: 'cl-sola small' });
   let galleria = [];
-  fetch('esempi/elenco.json?v=2026-11-26e').then(r => r.json()).then(g => { galleria = g; for (const x of g) fonte.append(el('option', { value: x.id }, 'Galleria: ' + x.nome)); }).catch(() => {});
+  fetch('esempi/elenco.json?v=2026-11-26q').then(r => r.json()).then(g => { galleria = g; for (const x of g) fonte.append(el('option', { value: x.id }, 'Galleria: ' + x.nome)); }).catch(() => {});
   const files = async () => fonte.value
-    ? (await (await fetch(`esempi/${encodeURIComponent(fonte.value)}.json?v=2026-11-26e`)).json()).files
+    ? (await (await fetch(`esempi/${encodeURIComponent(fonte.value)}.json?v=2026-11-26q`)).json()).files
     : S.selId ? await SV.filesTesto(S.selId) : null;
   const aggiornaSola = async () => {
     const f = await files().catch(() => null);

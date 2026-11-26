@@ -40,5 +40,53 @@
   "nome": "Ultrasuoni HC-SR04",
   "descr": "Sensore HC-SR04: Trig = PA8 (D7), Echo = PB10 (D6); TIM2 conta i µs e la distanza va sul monitor seriale.",
   "consegna": "Fai lampeggiare LD2 sempre più veloce man mano che l'ostacolo si avvicina (sotto 10 cm acceso fisso)."
+ },
+ {
+  "id": "led_pulsante",
+  "nome": "LED e pulsante",
+  "descr": "Un LED con la sua resistenza su PA10 (D2) e un pulsante su PB5 (D4) con interrupt EXTI e antirimbalzo: ogni pressione accende o spegne il LED.",
+  "consegna": "Con due pressioni veloci (entro mezzo secondo) il LED deve lampeggiare 3 volte invece di cambiare stato."
+ },
+ {
+  "id": "timer_led",
+  "nome": "Timer e interrupt",
+  "descr": "TIM2 genera un interrupt ogni 500 ms (84 MHz / 8400 / 5000) che fa lampeggiare LD2; il while(1) è libero e scrive i secondi sul monitor seriale.",
+  "consegna": "Cambia il periodo di TIM2 per far lampeggiare LD2 a 5 Hz senza toccare il codice nel while(1). Quanto vale Period?"
+ },
+ {
+  "id": "seg7_mux",
+  "nome": "Display 7 segmenti multiplexato",
+  "descr": "Tre cifre a 7 segmenti multiplexate (segmenti su PC0–PC6 e PC8, cifre su PB0–PB2): TIM2 ogni 2 ms accende una cifra alla volta, il while(1) conta i decimi di secondo. Il display è nei Dispositivi (vista «Scheda e dispositivi»).",
+  "consegna": "Fai partire e fermare il cronometro con il pulsante blu B1 (PC13); tenendolo premuto 2 secondi azzera."
+ },
+ {
+  "id": "encoder",
+  "nome": "Encoder rotativo",
+  "descr": "Encoder KY-040 sul timer TIM3 in modalità encoder (CLK = PA6 D12, DT = PA7 D11), pulsante SW su PB5 (D4): il valore va sul monitor seriale, SW lo azzera. Gira la manopola con la rotella.",
+  "consegna": "Limita il valore tra 0 e 100 e fai lampeggiare LD2 più veloce quando il valore cresce."
+ },
+ {
+  "id": "pwm_servo",
+  "nome": "PWM e servo",
+  "descr": "Servo SG90 sul PWM di TIM3 canale 1 (PA6, D12): 50 Hz (periodo 20 ms), impulso da 1 ms (0°) a 2 ms (180°); il servo va avanti e indietro.",
+  "consegna": "Muovi il servo solo tra 45° e 135°, con un passo di 5° ogni 100 ms."
+ },
+ {
+  "id": "adc_pot",
+  "nome": "ADC e potenziometro",
+  "descr": "Potenziometro da 10 kΩ tra 3V3 e GND con il cursore su PA0 (A0, ADC1 canale 0): valore, tensione e percentuale sul monitor seriale; LD2 acceso sopra metà. Gira la manopola con la rotella.",
+  "consegna": "Con il potenziometro regola la velocità di lampeggio di LD2: da 100 ms (tutto girato) a 1 s."
+ },
+ {
+  "id": "uart_eco",
+  "nome": "UART con interrupt",
+  "descr": "Monitor seriale a 115200: ogni carattere ricevuto arriva con HAL_UART_Receive_IT e torna indietro (eco); i comandi on, off e stato (con Invio) comandano LD2. Nel monitor scegli il terminatore CR o LF.",
+  "consegna": "Aggiungi il comando \"blink N\" che fa lampeggiare LD2 N volte."
+ },
+ {
+  "id": "stepper",
+  "nome": "Motore passo-passo",
+  "descr": "Motore 28BYJ-48 con driver ULN2003 su PA8, PB10, PB4, PB5 (IN1–IN4): mezzi passi, 4096 per giro; il pulsante blu B1 inverte il verso. Il motore è nei Dispositivi (vista «Scheda e dispositivi»).",
+  "consegna": "Fai fare al motore esattamente mezzo giro, aspetta 1 s e torna indietro; ripeti."
  }
 ]

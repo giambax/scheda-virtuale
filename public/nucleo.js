@@ -89,8 +89,10 @@ function nucleoSVG(opz = {}) {
 
 // vista Scheda: fori dei connettori cliccabili (.hp con data-pin = PA5…) e nomi dei pin
 function pinScheda() {
-  const C = NUC.COL, out = [];
-  const nome = (x, y, testo, sotto, ancora, col = C.silk) => `<text x="${x}" y="${y + 2.1}" font-size="5.4" text-anchor="${ancora}" fill="${col}" font-family="ui-monospace, Menlo, monospace">${testo}${sotto ? `<tspan fill="${C.silk2}" font-size="4.4"> ${sotto}</tspan>` : ''}</text>`;
+  const C = NUC.COL, out = [], nomi = [];   // i nomi dopo tutti i fori: un livello sopra
+  // contorno del colore del fondo (PCB bianco, o la pagina per i nomi fuori dalla scheda): i nomi restano leggibili
+  // anche se qualcosa ci passa sopra o sotto
+  const nome = (x, y, testo, sotto, ancora, col = C.silk, alone = '#fff') => `<text x="${x}" y="${y + 2.1}" font-size="5.4" text-anchor="${ancora}" fill="${col}" stroke="${alone}" stroke-width="1.8" stroke-linejoin="round" paint-order="stroke" pointer-events="none" font-family="ui-monospace, Menlo, monospace">${testo}${sotto ? `<tspan fill="${C.silk2}" font-size="4.4"> ${sotto}</tspan>` : ''}</text>`;
   const foro = (x, y, pin) => `<rect x="${x - 2.4}" y="${y - 2.4}" width="4.8" height="4.8" rx=".8" fill="#0d0e10"/><circle class="hp${pin ? '' : ' np'}" data-pin="${pin}" cx="${x}" cy="${y}" r="2" fill="#c8a85a"/>`;
   const colAlim = s => /^(\+?5V|\+?3V3|U5V|E5V|VIN|VDD|AVDD|IOREF|VBAT)$/.test(s) ? '#b3261e' : /^(GND|AGND)$/.test(s) ? '#111' : null;
   for (const [cn, x0] of [['CN7', 10], ['CN10', 270]]) NUC[cn].forEach((sig, i) => {
@@ -98,13 +100,13 @@ function pinScheda() {
     out.push(foro(x, y, pin));
     const fuori = cn === 'CN7' ? n % 2 === 1 : n % 2 === 0;   // nomi verso l'esterno solo per la fila esterna (dentro c'è l'altra fila)
     // fuori dalla scheda il fondo è quello della pagina (scuro o chiaro): colore del testo della pagina
-    if (fuori) out.push(nome(cn === 'CN7' ? x - 4 : x + 4, y, sig.replace(/^\+/, ''), '', cn === 'CN7' ? 'end' : 'start', colAlim(sig) || 'var(--muted, #5b5e64)'));
-    else out.push(nome(cn === 'CN7' ? x + 4 : x - 4, y, sig.replace(/^\+/, ''), '', cn === 'CN7' ? 'start' : 'end', colAlim(sig) || C.silk));
+    if (fuori) nomi.push(nome(cn === 'CN7' ? x - 4 : x + 4, y, sig.replace(/^\+/, ''), '', cn === 'CN7' ? 'end' : 'start', colAlim(sig) || 'var(--muted, #5b5e64)', 'var(--banco, #fff)'));
+    else nomi.push(nome(cn === 'CN7' ? x + 4 : x - 4, y, sig.replace(/^\+/, ''), '', cn === 'CN7' ? 'start' : 'end', colAlim(sig) || C.silk));
   });
   for (const [cn, x, y0, dentro] of [['CN6', 50, 140, 1], ['CN8', 50, 230, 1], ['CN5', 240, 100, -1], ['CN9', 240, 210, -1]]) NUC[cn].forEach(([a, p], i) => {
     const y = y0 + i * 10;
     out.push(foro(x, y, p));
-    out.push(nome(x + dentro * 8, y, a, p, dentro > 0 ? 'start' : 'end', colAlim(a) || C.silk));
+    nomi.push(nome(x + dentro * 8, y, a, p, dentro > 0 ? 'start' : 'end', colAlim(a) || C.silk));
   });
-  return out.join('');
+  return out.join('') + `<g class="nomi-pin">${nomi.join('')}</g>`;
 }

@@ -6,8 +6,8 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-26e';
-import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26e';
+import * as K from './circuito.js?v=2026-11-26q';
+import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26q';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -36,9 +36,17 @@ function disegnoStatico() {
   // Nucleo disegnata come quella vera (nucleo.js, punto O): stessa figura della vista Scheda
   s += nucleoSVG();
   // le breadboard sono componenti "tavola" (punto J): si disegnano con gli altri, sotto (tavolaSVG)
-  // nomi dei pin accanto ai connettori: STM32 sui Morpho (CN7, CN10), Arduino + STM32 sugli Arduino
-  // (CN5, CN6, CN8, CN9). Allontanando la vista spariscono (classe "lontano"); il dettaglio resta nella riga in basso.
-  s += '<g id="bb-nomi-pin" font-family="ui-monospace, Menlo, monospace" fill="#2b3440">';
+  // i nomi dei pin non stanno qui: sono un livello sopra i fili (nomiPin), così un filo non li copre
+  // fori dei connettori (quelli delle breadboard li disegna tavolaSVG)
+  for (const f of K.FORI.values()) if (f.id.startsWith('CN')) s += `<rect x="${f.x * P - 2.2}" y="${f.y * P - 2.2}" width="4.4" height="4.4" rx="0.8" fill="${f.id.startsWith('CN') ? '#c8a85a' : '#3d3d3d'}"/>`;
+  return s;
+}
+
+// nomi dei pin accanto ai connettori: STM32 sui Morpho (CN7, CN10), Arduino + STM32 sugli Arduino
+// (CN5, CN6, CN8, CN9). Livello sopra componenti e fili (pointer-events: none, i clic passano ai fori e ai fili).
+// Allontanando la vista spariscono (classe "lontano"); il dettaglio resta nella riga in basso.
+function nomiPin() {
+  let s = '<g id="bb-nomi-pin" font-family="ui-monospace, Menlo, monospace" fill="#2b3440">';
   for (const f of K.FORI.values()) {
     const m = /^CN(\d+)[- ](.*)$/.exec(f.nome);
     if (!m) continue;
@@ -57,12 +65,11 @@ function disegnoStatico() {
     // i nomi della fila esterna dei Morpho stanno fuori dalla scheda, sul fondo del banco (scuro o chiaro)
     const fuori = (cn === 7 && f.x === 1) || (cn === 10 && f.x === 28);
     const pw = /^(5V|3V3|U5V|E5V|VIN|VDD|AVDD|IOREF)$/.test(t) ? ' fill="#b3261e"' : /^(GND|AGND)$/.test(t) && !fuori ? ' fill="#111"' : fuori ? ' fill="var(--muted)"' : '';
-    s += `<text x="${(f.x + lato * 0.5) * P}" y="${f.y * P + fs * 0.36}" font-size="${fs}" text-anchor="${lato < 0 ? 'end' : 'start'}"${pw}>${esc(t)}</text>`;
+    // contorno del colore del fondo (PCB bianco o banco): il nome si stacca dal filo che gli passa sotto
+    const alone = fuori ? 'var(--banco)' : '#fff';
+    s += `<text x="${(f.x + lato * 0.5) * P}" y="${f.y * P + fs * 0.36}" font-size="${fs}" text-anchor="${lato < 0 ? 'end' : 'start'}"${pw} stroke="${alone}" stroke-width="2.2" stroke-linejoin="round" paint-order="stroke">${esc(t)}</text>`;
   }
-  s += '</g>';
-  // fori dei connettori (quelli delle breadboard li disegna tavolaSVG)
-  for (const f of K.FORI.values()) if (f.id.startsWith('CN')) s += `<rect x="${f.x * P - 2.2}" y="${f.y * P - 2.2}" width="4.4" height="4.4" rx="0.8" fill="${f.id.startsWith('CN') ? '#c8a85a' : '#3d3d3d'}"/>`;
-  return s;
+  return s + '</g>';
 }
 
 // ------------------------------------------------------------------
@@ -327,8 +334,11 @@ function statoPin() {
   for (const k of B.pinCirc) {
     const { p, pin } = parseKey(k), i = pinInfo(p, pin);
     if (!i) continue;
-    const af = i.mode === 2 && /^TIM|_TX$/.test(i.func);
-    pins[k] = { mode: i.mode, pull: i.pull, od: i.od, level: i.level, af };
+    // AF che pilota il pin: TX della seriale e canali dei timer che escono (PWM/OC). Un canale del timer senza PWM è un
+    // ingresso (encoder, input capture): la breadboard gli manda il livello come a un GPIO in ingresso
+    const tim = i.mode === 2 && /^TIM/.test(i.func);
+    const af = i.mode === 2 && (/_TX$/.test(i.func) || (tim && !!i.pwm));
+    pins[k] = { mode: i.mode, pull: i.pull, od: i.od, level: i.level, af, tin: tim && !i.pwm };
     if (i.mode === 2 && i.pwm && i.pwm.duty > 0 && i.pwm.duty < 1000) pwm.push([k, i.pwm.duty / 1000]);
   }
   return { pins, pwm: pwm.slice(0, 3) };
@@ -440,7 +450,7 @@ function aggiornaIngressi() {
     if (!ps || !x) continue;
     const { p, pin } = parseKey(k);
     // il nodo deve avere qualcosa oltre al pin (se no non lo pilota la breadboard)
-    if (ps.mode === 0 || (ps.mode === 3 && !Object.values(S.adc).includes(k))) {
+    if (ps.mode === 0 || ps.tin || (ps.mode === 3 && !Object.values(S.adc).includes(k))) {
       const lv = K.livello(x.v);
       const v = lv === null ? (B.inviati.has(k) ? B.inviati.get(k) : -1) : lv;
       if (B.inviati.get(k) !== v) { B.inviati.set(k, v); cmd(`I ${p} ${pin} ${v}`); }
@@ -1542,19 +1552,20 @@ const IC = {   // icone SVG locali (24×24, tratto = colore del testo)
 };
 const ic = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
 const CATEGORIE = [
-  ['Base', ['res', 'pot', 'cap', 'jumper']],
-  ['Breadboard', ['bb830', 'bb400', 'binari']],
-  ['LED e display', ['led', 'seg7', 'seg7x3', 'diode']],
+  ['Componenti di base', ['res', 'pot', 'cap', 'jumper']],
+  ['Breadboard e binari', ['bb830', 'bb400', 'binari']],
+  ['LED e diodi', ['led', 'diode']],
+  ['Display', ['seg7', 'seg7x3', 'lcd16x2', 'oled', 'oledspi']],
   ['Transistor', ['npn', 'pnp']],
-  ['Ingressi', ['button', 'encoder']],
-  ['Uscite', ['buzzer', 'servo', 'motor']],
-  ['Display I2C/SPI', ['lcd16x2', 'oled', 'oledspi']],
-  ['Sensori e memorie', ['lm75', 'mpu6050', 'hcsr04', 'eeprom', 'eeprom256']],
-  ['Strumenti', ['dmm', 'scope', 'gen', 'psu']],
+  ['Pulsanti ed encoder', ['button', 'encoder']],
+  ['Motori e buzzer', ['buzzer', 'servo', 'motor']],
+  ['Sensori', ['lm75', 'mpu6050', 'hcsr04']],
+  ['Memorie', ['eeprom', 'eeprom256']],
+  ['Strumenti da banco', ['dmm', 'scope', 'gen', 'psu']],
 ];
-const NOME_CORTO = { bb830: 'Breadboard 830', bb400: 'Mezza (400)', binari: 'Binari + −', res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: 'Display 1 cifra', seg7x3: 'Display 3 cifre',
+const NOME_CORTO = { bb830: 'Breadboard 830', bb400: 'Breadboard 400', binari: 'Binari + −', res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: '7 segmenti, 1 cifra', seg7x3: '7 segmenti, 3 cifre',
   diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC',
-  lcd16x2: 'LCD 16x2 I2C', oled: 'OLED I2C', oledspi: 'OLED SPI', lm75: 'LM75 temperatura', mpu6050: 'MPU6050', hcsr04: 'HC-SR04', eeprom: 'EEPROM 24C02', eeprom256: 'EEPROM 24LC256', dmm: 'Multimetro', scope: 'Oscilloscopio', gen: 'Generatore', psu: 'Alimentatore' };
+  lcd16x2: 'LCD 16x2 I2C', oled: 'OLED I2C', oledspi: 'OLED SPI', lm75: 'Temperatura LM75', mpu6050: 'Accelerometro MPU6050', hcsr04: 'Ultrasuoni HC-SR04', eeprom: 'EEPROM 24C02', eeprom256: 'EEPROM 24LC256', dmm: 'Multimetro', scope: 'Oscilloscopio', gen: 'Generatore di funzioni', psu: 'Alimentatore' };
 function iconaComp(tipo) {
   const c = { id: 'ico', type: tipo, x: 0, y: 0, rot: 0, opt: Object.fromEntries(K.OPZIONI[tipo].map(([k, v]) => [k, v])) };
   return `<svg viewBox="0 0 10 10" data-icona="${tipo}"><g>${compSVG(c)}</g></svg>`;
@@ -1630,6 +1641,7 @@ function monta() {
       <div class="bb-strumento">${b('bb-annulla', 'annulla', 'Annulla (⌘/Ctrl+Z)')}${b('bb-ripeti', 'ripeti', 'Ripeti (⌘/Ctrl+Y)')}</div>
       <div class="bb-strumento">${b('bb-zin', 'piu', 'Zoom avanti (rotella)')}${b('bb-zout', 'meno', 'Zoom indietro (rotella)')}${b('bb-adatta', 'adatta', 'Adatta alla finestra (F)')}</div>
       <span id="bb-colori" class="bb-colori" title="Colore del filo selezionato"></span>
+      <button id="bb-preset" type="button" class="bb-preset" title="Preset del banco: parti da una breadboard già alimentata, da tre breadboard unite… o salva il banco attuale come preset tuo">▦ Preset</button>
       <select id="bb-esempio" title="Circuiti pronti"><option value="">Esempi…</option><option value="15k">Cronometro 3 cifre (Prog_3digit, R11 = 15k come montato)</option><option value="1k5">Cronometro 3 cifre (R11 = 1,5k corretto)</option></select>
       <span class="tabs-sp"></span>
       <div class="bb-strumento">${b('bb-png', 'png', 'Scarica l\'immagine del montaggio (per le relazioni)', 'PNG')}${b('bb-svuota', 'elimina', 'Togli tutto', 'Svuota')}</div>
@@ -1640,7 +1652,7 @@ function monta() {
       <defs><filter id="bb-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="4"/></filter>
         <pattern id="bb-punti" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5" r=".8" fill="var(--banco-punto)"/></pattern></defs>
       <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#bb-punti)"/>
-      <g id="bb-static">${disegnoStatico()}</g><g id="bb-comps"></g><g id="bb-wires"></g><g id="bb-prob"></g><g id="bb-nodo"></g><g id="bb-sel"></g><g id="bb-sel-aggancio"></g><g id="bb-ghost"></g>
+      <g id="bb-static">${disegnoStatico()}</g><g id="bb-comps"></g><g id="bb-wires"></g>${nomiPin()}<g id="bb-prob"></g><g id="bb-nodo"></g><g id="bb-sel"></g><g id="bb-sel-aggancio"></g><g id="bb-ghost"></g>
     </svg></div>
     <div id="bb-problemi" class="bb-problemi small" hidden></div>
     <div id="bb-stato" class="bb-stato small mono"></div>

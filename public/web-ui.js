@@ -201,11 +201,14 @@ $('#btn-nuovo').addEventListener('click', async () => {
   const n = (prompt('Nome del nuovo progetto:', 'Nuovo_progetto') || '').trim();
   if (!n) return;
   const nome = await SV.newProject(n);
+  // banco del progetto nuovo dal preset predefinito (preset.js: ★ nella finestra Preset)
+  const bb = window.SVpreset && SVpreset.bancoPredefinito();
+  if (bb) await SV.saveFile(nome, '.breadboard.json', JSON.stringify(bb));
   await afterImport([nome]);
   showTab('code');
 });
 // progetti d'esempio (public/esempi, strumenti/crea-esempi.py): codice + circuito già collegato
-fetch('esempi/elenco.json?v=2026-11-26e').then(r => r.json()).then(el => {
+fetch('esempi/elenco.json?v=2026-11-26q').then(r => r.json()).then(el => {
   const sel = $('#sel-esempio');
   for (const e of el) { const o = document.createElement('option'); o.value = e.id; o.textContent = e.nome; o.title = e.descr; sel.append(o); }
 }).catch(() => {});
@@ -244,4 +247,17 @@ $('#btn-esporta').addEventListener('click', async () => download(await SV.export
 $('#btn-esporta1').addEventListener('click', async () => {
   if (window.SVeditor) await SVeditor.saveAll();
   download(await SV.exportZip(S.selId), `${S.selId}.zip`);
+});
+// progetto completo per STM32CubeIDE (File > Import > Existing Projects into Workspace > Select archive file)
+$('#btn-cubeide').addEventListener('click', async e => {
+  const b = e.currentTarget;
+  if (window.SVeditor) await SVeditor.saveAll();
+  b.disabled = true; const t = b.textContent; b.textContent = '⏳ Preparo…';
+  try {
+    const r = await SV.exportCubeIDE(S.selId);
+    download(r.zip, `${r.nome}-CubeIDE.zip`);
+    SV.log('info', `Scaricato ${r.nome}-CubeIDE.zip: in CubeIDE File > Import… > Existing Projects into Workspace > Select archive file (istruzioni nel LEGGIMI-CubeIDE.txt dentro lo zip)`);
+    for (const a of r.avvisi) SV.log('warn', a);
+  } catch (err) { SV.log('error', 'Esportazione per CubeIDE non riuscita: ' + (err.message || err)); }
+  finally { b.disabled = false; b.textContent = t; }
 });

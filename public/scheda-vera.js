@@ -177,12 +177,26 @@ if (typeof document !== 'undefined' && document.getElementById('serial-form')) {
       else throw new Error('scegli il .elf (o .hex/.bin) che CubeIDE mette nella cartella Debug del progetto');
     } catch (e) { st.img = null; $c('[data-controlli]').textContent = ''; $c('[data-esito]').textContent = '✗ ' + (e.message || e); $c('[data-scarica]').disabled = $c('[data-scrivi]').disabled = true; }
   }
+  // progetto della cartella collegata: il .elf si prende da solo dalla sua cartella Debug (niente selettore)
+  async function daCartella() {
+    const riga = $c('[data-cartella]');
+    riga.hidden = true;
+    const id = typeof S !== 'undefined' && S.selId, C = window.SV && SV.cartella;
+    if (!id || !C || !C.eCartella(id) || !C.elf) return;
+    const e = await C.elf(id).catch(() => null);
+    riga.hidden = false;
+    if (!e) { riga.textContent = 'Nella cartella collegata non c\'è ancora un .elf: in CubeIDE premi Build (il martello), poi riapri questa finestra.'; return; }
+    riga.textContent = `Dalla cartella collegata: ${e.nome} (compilato ${new Date(e.quando).toLocaleString('it-IT')})` + (e.vecchio ? ' — ATTENZIONE: hai salvato i sorgenti dopo questa compilazione, rifai Build in CubeIDE per caricare il codice nuovo.' : '');
+    const nome = e.nome.split('/').pop().replace(/\.elf$/i, '').replace(/[^\w\-]+/g, '_').slice(0, 40) || 'programma';
+    try { mostra(daElf(e.buf), nome); } catch (err) { $c('[data-esito]').textContent = '✗ ' + (err.message || err); }
+  }
   document.getElementById('btn-carica').addEventListener('click', () => {
     st.img = null;
     $c('[data-controlli]').textContent = ''; $c('[data-esito]').textContent = '';
     $c('[data-scarica]').disabled = $c('[data-scrivi]').disabled = true;
     $c('[data-fs]').hidden = 'showDirectoryPicker' in window;
     dlg.showModal();
+    daCartella();
   });
   $c('[data-file]').addEventListener('change', e => { const f = e.target.files[0]; if (f) leggiFile(f); e.target.value = ''; });
   $c('[data-scarica]').addEventListener('click', () => {

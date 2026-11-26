@@ -60,7 +60,9 @@ setInterval(async () => {
   try {
     const id = S.selId, cambiati = await C.controlla(id);
     if (cambiati.length && S.selId === id) {
-      SV.log('info', `Cambiato sul disco: ${cambiati.map(r => r.split('/').pop()).join(', ')} — ricaricato`);
+      const tolti = cambiati.eliminati || [], nomi = l => l.map(r => r.split('/').pop()).join(', ');
+      const nuovi = cambiati.filter(r => !tolti.includes(r));
+      SV.log('info', [nuovi.length && 'Cambiato sul disco: ' + nomi(nuovi), tolti.length && 'Tolto dal disco: ' + nomi(tolti)].filter(Boolean).join('; ') + ' — ricaricato');
       const giraVa = S.server.status === 'running' && S.server.project && S.server.project.id === id;
       await selectProject(id, true);   // resta sullo stesso file; l'editor ricarica i file non modificati
       if (giraVa && ls.get('sv-ricompila-disco') !== '0' && cambiati.some(r => /\.(c|h|ioc)$/.test(r))) doRun(!!S.server.debug);

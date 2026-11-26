@@ -388,6 +388,13 @@ export async function supabaseRemote(cfg, createClient = null, go = null) {
       },
       nomi: ids => data(() => sb.rpc('nomi_utenti', { ids })),
     },
+    // preset del banco (supabase/migrazione-6): solo i propri; insert per i nuovi, update per quelli già online
+    preset: {
+      tutti: () => data(() => sb.from('preset_banco').select('id,nome,codice,dati,aggiornato').order('aggiornato', { ascending: false }).limit(100)),
+      crea: p => data(() => sb.from('preset_banco').insert({ id: p.id, nome: p.nome, codice: !!p.codice, dati: p.dati }).select('id,aggiornato').single()),
+      cambia: p => data(() => sb.from('preset_banco').update({ nome: p.nome, codice: !!p.codice, dati: p.dati }).eq('id', p.id).select('id,aggiornato').single()),
+      elimina: id => data(() => sb.from('preset_banco').delete().eq('id', id).select('id')),
+    },
     condivisioni: {
       crea: async c => { const x = corta(c); return data(() => sb.from('condivisioni').insert(x).select('id').single()); },
       mie: () => data(() => sb.from('condivisioni').select('id,tipo,nome,creata,revocata,letture').order('creata', { ascending: false }).limit(50)),
@@ -592,6 +599,29 @@ export function fintoRemote(cfg = {}, go = null) {
           return elenco(r);
         },
         async nomi(ids) { const db = load(), id = pronta(db); return admin(db, id) ? db.users.filter(u => ids.includes(u.id)).map(u => ({ id: u.id, username: u.username })) : []; },
+      };
+    })(),
+    // preset finti: stesse regole della migrazione 6 (window.SV_FINTO_NO_PRESET = migrazione assente)
+    preset: (() => {
+      const mie = (db, id) => (db.preset || []).filter(p => p.owner === id);
+      const out = p => ({ id: p.id, nome: p.nome, codice: p.codice, dati: p.dati, aggiornato: new Date(p.aggiornato).toISOString() });
+      const prima = () => { if (window.SV_FINTO_NO_PRESET) throw new RemoteError(SEGN_ASSENTE, 'assente'); const db = load(); return [db, me(db)]; };
+      const nome = n => { const t = String(n || '').trim(); if (!t || t.length > 60) throw new RemoteError('Nome del preset non valido.', 'dati'); return t; };
+      return {
+        async tutti() { const [db, id] = prima(); return mie(db, id).sort((a, b) => b.aggiornato - a.aggiornato).map(out); },
+        async crea(p) {
+          const [db, id] = prima();
+          if (mie(db, id).length >= 50) throw new RemoteError('al massimo 50 preset (elimina quelli che non usi)', 'limite');
+          if ((db.preset || []).some(x => x.id === p.id)) throw new RemoteError('duplicate key', 'errore');
+          const r = { id: p.id, owner: id, nome: nome(p.nome), codice: !!p.codice, dati: p.dati, aggiornato: Date.now() };
+          (db.preset = db.preset || []).push(r); save(db); return { id: r.id, aggiornato: out(r).aggiornato };
+        },
+        async cambia(p) {
+          const [db, id] = prima(), r = mie(db, id).find(x => x.id === p.id);
+          if (!r) throw new RemoteError('preset non trovato', 'errore');
+          Object.assign(r, { nome: nome(p.nome), codice: !!p.codice, dati: p.dati, aggiornato: Date.now() }); save(db); return { id: r.id, aggiornato: out(r).aggiornato };
+        },
+        async elimina(pid) { const [db, id] = prima(); const n = (db.preset || []).length; db.preset = (db.preset || []).filter(x => !(x.id === pid && x.owner === id)); save(db); return n !== db.preset.length ? [{ id: pid }] : []; },
       };
     })(),
     // link corti finti: stesse regole della migrazione 4

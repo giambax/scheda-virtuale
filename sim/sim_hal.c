@@ -278,6 +278,12 @@ static int irq_preempt(int irqn)
 
 static void tim_sanitize_irq(int irqn);
 
+/* livello di interrupt annidati e numero progressivo di ogni interrupt eseguito: servono al debug per non
+ * fermare un passo dentro un interrupt arrivato nel frattempo (come il debugger vero, che maschera gli
+ * interrupt durante il passo) */
+static int irq_liv;
+static uint32_t irq_num[NIRQ + 1], irq_cont;
+
 static void call_irq(int irqn)
 {
   handler_t h = irq_handler(irqn);
@@ -286,7 +292,10 @@ static void call_irq(int irqn)
   cur_preempt = irq_preempt(irqn);
   irq_count[irqn + 16]++;
   tim_sanitize_irq(irqn);
+  if (irq_liv < NIRQ) irq_num[irq_liv + 1] = ++irq_cont;
+  irq_liv++;
   h();
+  irq_liv--;
   cur_preempt = saved;
 }
 
@@ -789,6 +798,18 @@ void HAL_GPIO_Init(GPIO_TypeDef *GPIOx, GPIO_InitTypeDef *GPIO_Init)
       EXTI->FTSR = (mode & 0x200000u) ? (EXTI->FTSR | bit) : (EXTI->FTSR & ~bit);
     }
   }
+  /* il livello dei pin appena configurati si vede subito in IDR (prima si aggiornava al ms dopo: un ingresso con
+   * pull-up letto subito dopo MX_GPIO_Init valeva 0, es. B1 "premuto" alla prima lettura) */
+  for (uint32_t pos = 0; pos < 16; pos++) {
+    uint32_t bit = 1u << pos;
+    if (!(GPIO_Init->Pin & bit)) continue;
+    uint32_t m = GPIO_Init->Mode & 3u, pu = GPIO_Init->Pull & 3u;
+    int e = ext_in[p][pos], v;
+    if (m == 0u) v = e >= 0 ? e : pu == 1u ? 1 : pu == 2u ? 0 : (int)((board_pullup[p] >> pos) & 1u);
+    else if (m == 1u && !((GPIO_Init->Mode >> 4) & 1u)) v = (int)((GPIOx->ODR >> pos) & 1u);
+    else continue;
+    GPIOx->IDR = v ? (GPIOx->IDR | bit) : (GPIOx->IDR & ~bit);
+  }
 }
 
 void HAL_GPIO_DeInit(GPIO_TypeDef *GPIOx, uint32_t GPIO_Pin)
@@ -814,7 +835,15 @@ void HAL_GPIO_DeInit(GPIO_TypeDef *GPIOx, uint32_t GPIO_Pin)
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
 {
   charge(GPIO_CYC);
-  return (GPIOx->IDR & GPIO_Pin) ? GPIO_PIN_SET : GPIO_PIN_RESET;
+  /* uscita push-pull: sul pin c'è subito quello appena scritto in ODR (IDR qui si ricalcola a fine ms; sulla scheda
+   * vera dopo 2 cicli). Serve a "scrivo e rileggo" (es. if (HAL_GPIO_ReadPin(LD2…)) subito dopo WritePin). */
+  uint32_t uscite = 0;
+  for (uint32_t m = GPIO_Pin; m; m &= m - 1) {
+    uint32_t i = (uint32_t)__builtin_ctz(m);
+    if (((GPIOx->MODER >> (2 * i)) & 3u) == 1u && !((GPIOx->OTYPER >> i) & 1u)) uscite |= 1u << i;
+  }
+  uint32_t v = (GPIOx->IDR & ~uscite) | (GPIOx->ODR & uscite);
+  return (v & GPIO_Pin) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
 /* analizzatore logico: ogni scrittura con HAL_GPIO_WritePin/TogglePin esce subito con il
  * tempo simulato in µs ("G us porta ODR"), non solo a fine millisecondo come "C".
@@ -2353,6 +2382,15 @@ static uint32_t dbg_bp[256];
 static int dbg_nbp;
 static volatile int dbg_modo = 1;          /* 0 corre, 1 entra (passo), 2 passo sopra, 3 esci, 4 pausa; all'avvio si ferma sulla prima riga */
 static int dbg_rif, dbg_fermo, dbg_dentro;
+static int dbg_irq_rif;                     /* livello di interrupt (e quale interrupt) in cui è partito il passo */
+static uint32_t dbg_irq_num;
+/* un passo si ferma solo nel codice dove è partito o in quello sotto (mai in un interrupt arrivato durante il passo) */
+static int dbg_contesto_ok(void)
+{
+  if (irq_liv < dbg_irq_rif) return 1;
+  return irq_liv == dbg_irq_rif && (irq_liv == 0 || irq_num[irq_liv] == dbg_irq_num);
+}
+static void dbg_rif_irq(void) { dbg_irq_rif = irq_liv; dbg_irq_num = irq_liv ? irq_num[irq_liv] : 0; }
 
 /* Punto H: tipi per la pagina. Campi delle struct ("Y t tipo campo offset dim tipo elem tipocampo") registrati dal
  * codice dell'utente (__svt, dal costruttore di strumenta.js) e qui sotto quelli delle periferiche e degli handle della
@@ -2485,9 +2523,10 @@ void __svr(unsigned id)
   if (dbg_dentro) return;
   int stop = 0;
   switch (dbg_modo) {
-    case 1: case 4: stop = 1; break;
-    case 2: stop = dbg_prof <= dbg_rif; break;
-    case 3: stop = dbg_prof < dbg_rif; break;
+    case 4: stop = 1; break;
+    case 1: stop = dbg_contesto_ok(); break;
+    case 2: stop = dbg_prof <= dbg_rif && dbg_contesto_ok(); break;
+    case 3: stop = dbg_prof < dbg_rif && dbg_contesto_ok(); break;
   }
   if (!stop) for (int i = 0; i < dbg_nbp; i++) if (dbg_bp[i] == id) { if (++dbg_bpc[i] >= dbg_bpn[i]) stop = 2; break; }
   if (!stop) return;
@@ -2528,9 +2567,9 @@ static void dbg_comando(char *line)
   } else if (line[0] == 'Z') {
     char c = line[2];
     if (c == 'c') { dbg_modo = 0; dbg_fermo = 0; }
-    else if (c == 's') { dbg_modo = 1; dbg_fermo = 0; }
-    else if (c == 'n') { dbg_modo = 2; dbg_rif = dbg_prof; dbg_fermo = 0; }
-    else if (c == 'o') { dbg_modo = 3; dbg_rif = dbg_prof; dbg_fermo = 0; }
+    else if (c == 's') { dbg_modo = 1; dbg_rif_irq(); dbg_fermo = 0; }
+    else if (c == 'n') { dbg_modo = 2; dbg_rif = dbg_prof; dbg_rif_irq(); dbg_fermo = 0; }
+    else if (c == 'o') { dbg_modo = 3; dbg_rif = dbg_prof; dbg_rif_irq(); dbg_fermo = 0; }
     else if (c == 'p') { if (!dbg_fermo) dbg_modo = 4; }
   }
 }

@@ -205,7 +205,7 @@ $('#btn-nuovo').addEventListener('click', async () => {
   showTab('code');
 });
 // progetti d'esempio (public/esempi, strumenti/crea-esempi.py): codice + circuito già collegato
-fetch('esempi/elenco.json?v=2026-11-26b').then(r => r.json()).then(el => {
+fetch('esempi/elenco.json?v=2026-11-26c').then(r => r.json()).then(el => {
   const sel = $('#sel-esempio');
   for (const e of el) { const o = document.createElement('option'); o.value = e.id; o.textContent = e.nome; o.title = e.descr; sel.append(o); }
 }).catch(() => {});

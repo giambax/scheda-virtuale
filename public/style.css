@@ -592,3 +592,10 @@ body[data-vista="breadboard"] .vista-btn.on { background: var(--panel); }
 .cassetto { background: var(--beige); }
 .cassetto .proj { background: var(--panel); }
 .sp-tit { background: var(--beige); border-radius: 12px 12px 0 0; }
+
+/* Punto M: scheda vera (monitor seriale e caricamento) */
+#ser-vera.on { border-color: var(--ok); color: var(--ok); }
+.carica-controlli { list-style: none; padding: 0; margin: 6px 0; }
+.carica-controlli .ok { color: var(--ok); }
+.carica-controlli .err { color: var(--err); }
+.dlg-pulsanti { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 12px; }

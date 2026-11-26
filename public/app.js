@@ -437,10 +437,11 @@ function serialSpan(c) {
   span.textContent = serialFmt(c);
   return span;
 }
-function appendSerial(n, text, cls, hex) {
+// ms: ora del pezzo (simulata; per la scheda vera, scheda-vera.js, il tempo da quando la porta è aperta)
+function appendSerial(n, text, cls, hex, ms = S.ms) {
   S.uart[n] = true;
   if (!S.serialChunks.length) { $('#serial').innerHTML = ''; SER.bol = true; }
-  const c = { n, text, cls, hex, ms: S.ms };
+  const c = { n, text, cls, hex, ms };
   S.serialChunks.push(c);
   if (S.serialChunks.length > 20000) S.serialChunks.splice(0, 5000);
   if (n === S.uartSel || cls) {
@@ -465,7 +466,7 @@ function renderUartTabs() {
   const names = Object.keys(S.uart).sort();
   if (!names.includes(S.uartSel)) names.push(S.uartSel);
   const el = $('#uart-tabs');
-  const html = names.sort().map(n => `<button data-u="${n}" class="${n === S.uartSel ? 'on' : ''}">USART${n}</button>`).join('');
+  const html = names.sort().map(n => `<button data-u="${n}" class="${n === S.uartSel ? 'on' : ''}">${n === 'V' ? '🔌 Scheda vera' : 'USART' + n}</button>`).join('');
   if (el.innerHTML !== html) {
     el.innerHTML = html;
     el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { S.uartSel = b.dataset.u; redrawSerial(); renderUartTabs(); serialBaudCheck(); }));
@@ -727,9 +728,12 @@ function showTab(name) {
   try { localStorage.setItem('sv-tab', name); } catch {}
 }
 function resetSimState() {
-  Object.assign(S, { ports: {}, pwm: {}, adc: {}, ms: 0, tick: 0, primask: 0, irq: {}, irqRate: {}, irqLast: null, uart: {}, serialChunks: [], baud: {}, pinsKey: '', pfNoted: false });
+  // la linguetta «Scheda vera» (scheda-vera.js) non dipende dalla simulazione: resta
+  const vera = S.serialChunks.filter(c => c.n === 'V');
+  Object.assign(S, { ports: {}, pwm: {}, adc: {}, ms: 0, tick: 0, primask: 0, irq: {}, irqRate: {}, irqLast: null, uart: vera.length || S.uartSel === 'V' ? { V: true } : {}, serialChunks: vera, baud: {}, pinsKey: '', pfNoted: false });
   for (const k of Object.keys(S.inputs)) { if (!S.inputs[k].latched) delete S.inputs[k]; }
   $('#serial').innerHTML = '';
+  if (vera.length) redrawSerial();
   $('#irqs').innerHTML = '<span class="muted small">Nessun interrupt finora.</span>';
   if (window.laReset) laReset();
   serialBaudCheck();
@@ -772,7 +776,8 @@ function wire() {
     const bytes = new TextEncoder().encode(inp.value + eol);
     if (!bytes.length) return;
     const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
-    cmd(`R ${S.uartSel} ${hex}`);
+    if (S.uartSel === 'V' && window.svSerialeVera) svSerialeVera(bytes);   // scheda vera (scheda-vera.js)
+    else cmd(`R ${S.uartSel} ${hex}`);
     inp.value = '';
   });
   try { const t = localStorage.getItem('sv-tab'); if (t) showTab(t); } catch {}

@@ -9,9 +9,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0b">
 <link rel="apple-touch-icon" href="icone/icona-180.png">
-<link rel="stylesheet" href="style.css?v=2026-11-26b">
-<link rel="stylesheet" href="web.css?v=2026-11-26b">
-<link rel="stylesheet" href="mobile.css?v=2026-11-26b">
+<link rel="stylesheet" href="style.css?v=2026-11-26c">
+<link rel="stylesheet" href="web.css?v=2026-11-26c">
+<link rel="stylesheet" href="mobile.css?v=2026-11-26c">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -102,6 +102,7 @@ if ('serviceWorker' in navigator) {
       <button id="btn-condividi" class="ghost small" title="Un link con una copia di questo progetto (file, dispositivi, breadboard, canali dei Segnali): chi lo apre la prova e può salvarsela. Il tuo progetto non cambia.">🔗 Condividi</button>
       <button id="btn-esercizio" class="ghost small" title="Un link «esercizio»: titolo, consegna e questo progetto come partenza (anche con file in sola lettura)">📝 Esercizio</button>
       <button id="btn-elimina" class="ghost small danger">Elimina</button>
+      <button id="btn-carica" class="ghost small" type="button" title="Copia sulla NUCLEO vera il programma compilato da CubeIDE (.elf della cartella Debug)">⬆ Sulla scheda…</button>
     </div>
     <div id="comp-stato" class="comp-stato muted small"></div>
     <input id="filter" type="search" placeholder="Cerca progetto…" autocomplete="off">
@@ -161,6 +162,7 @@ if ('serviceWorker' in navigator) {
       <div class="serial-head">
         <div id="uart-tabs" class="seg"></div>
         <span class="muted small">USART2 = porta seriale USB del ST-LINK</span>
+        <button id="ser-vera" class="ghost small" type="button" title="Collega il monitor alla NUCLEO vera sulla porta USB (Chrome/Edge): stessa vista, baud dal menu qui accanto">🔌 Scheda vera</button>
         <select id="serial-baud" class="small"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option><option>230400</option><option>460800</option><option>921600</option></select>
         <select id="serial-view" class="small" title="Come mostrare i byte ricevuti"><option value="txt">Testo</option><option value="hex">HEX</option></select>
         <label class="small"><input id="serial-ts" type="checkbox"> Ora</label>
@@ -377,6 +379,21 @@ if ('serviceWorker' in navigator) {
   </form>
 </dialog>
 
-<script type="module" src="local-server.js?v=2026-11-26b"></script>
+<dialog id="carica-dlg">
+  <h3>Carica sulla scheda vera</h3>
+  <p class="small">Il sito non sa compilare per il processore ARM della scheda (simula il programma sul computer). Il file da caricare lo fa
+  <b>CubeIDE</b>: dopo «Build» è nella cartella <code>Debug</code> del progetto (<code>nome_progetto.elf</code>). Il sito lo controlla, lo
+  trasforma in <code>.bin</code> e lo copia sul disco <b>NODE_F401RE</b> che compare quando colleghi la Nucleo: la scheda lo scrive da sola e riparte.</p>
+  <p><label class="small">File compilato (.elf, .hex o .bin) <input type="file" data-file accept=".elf,.hex,.bin"></label></p>
+  <ul class="carica-controlli small" data-controlli></ul>
+  <p class="small" data-esito aria-live="polite"></p>
+  <p class="small muted" data-fs hidden>Questo browser non può scrivere sul disco della scheda: usa «Scarica .bin» e trascinalo su NODE_F401RE.</p>
+  <div class="dlg-pulsanti">
+    <button type="button" data-scrivi class="primary ok" disabled title="Chrome/Edge: scegli il disco NODE_F401RE nella finestra che si apre">Scrivi su NODE_F401RE…</button>
+    <button type="button" data-scarica disabled>Scarica .bin</button>
+    <button type="button" onclick="this.closest('dialog').close()">Chiudi</button>
+  </div>
+</dialog>
+<script type="module" src="local-server.js?v=2026-11-26c"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 // l'anteprima di un link aperto e il riquadro con la consegna dell'esercizio accanto all'editor.
 // Usa S, $, showTab, selectProject di app.js e SV di local-server.js.
 // Tutto quello che arriva da un link (nomi, titolo, consegna) si scrive con textContent, mai come HTML.
-import { creaLink, LINK_LUNGO, LINK_TROPPO } from './link.js?v=2026-11-26c';
+import { creaLink, LINK_LUNGO, LINK_TROPPO } from './link.js?v=2026-11-26e';
 import qrcode from '../vendor/qrcode/qrcode.js';
 
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };

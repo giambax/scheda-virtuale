@@ -36,72 +36,11 @@ const api = (p, body) => fetch(p, body === undefined ? {} : { method: 'POST', he
 const cmd = (...lines) => api('/api/cmd', { lines });
 
 // ------------------------------------------------------------------
-// Scheda (SVG)
-const HDR = {
-  left1: { x: 70, y0: 262, labels: ['NC', 'IOREF', 'RESET', '3V3', '5V', 'GND', 'GND', 'VIN'], pins: [] },
-  left2: { x: 70, y0: 430, labels: ['A0', 'A1', 'A2', 'A3', 'A4', 'A5'], pins: ['PA0', 'PA1', 'PA4', 'PB0', 'PC1', 'PC0'] },
-  right1: { x: 330, y0: 262, labels: ['D15', 'D14', 'AREF', 'GND', 'D13', 'D12', 'D11', 'D10', 'D9', 'D8'], pins: ['PB8', 'PB9', '', '', 'PA5', 'PA6', 'PA7', 'PB6', 'PC7', 'PA9'] },
-  right2: { x: 330, y0: 452, labels: ['D7', 'D6', 'D5', 'D4', 'D3', 'D2', 'D1', 'D0'], pins: ['PA8', 'PB10', 'PB4', 'PB5', 'PB3', 'PA10', 'PA2', 'PA3'] },
-};
+// Scheda (SVG): il disegno della Nucleo è in nucleo.js (uguale alla vista Breadboard, punto O)
 function boardSVG() {
-  const g = [];
-  g.push(`<svg viewBox="0 0 400 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Scheda NUCLEO-F401RE">
-  <defs>
-    <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <linearGradient id="pcb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbf8"/><stop offset="1" stop-color="#ecece6"/></linearGradient>
-    <linearGradient id="usb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8eaee"/><stop offset="1" stop-color="#9aa0aa"/></linearGradient>
-    <radialGradient id="cap" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#5aa0ff"/><stop offset="1" stop-color="#1450b8"/></radialGradient>
-    <radialGradient id="capk" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#555"/><stop offset="1" stop-color="#111"/></radialGradient>
-  </defs>
-  <rect x="8" y="14" width="384" height="618" rx="16" fill="url(#pcb)" stroke="#cfcfc6"/>
-  <g fill="#d6d6cf">${[[22, 28], [378, 28], [22, 618], [378, 618], [22, 172], [378, 172]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6"/><circle cx="${x}" cy="${y}" r="3" fill="#fff"/>`).join('')}</g>
-  <rect x="172" y="2" width="56" height="34" rx="4" fill="url(#usb)" stroke="#7c828c"/>
-  <rect x="182" y="10" width="36" height="10" rx="2" fill="#2c2f35"/>
-  <text x="200" y="58" text-anchor="middle" font-size="9" fill="#8a8a82" font-family="system-ui">ST-LINK</text>
-  <rect x="230" y="70" width="40" height="40" rx="3" fill="#1d1f23"/><rect x="236" y="76" width="28" height="28" rx="2" fill="#26292e"/>
-  <g id="ld1"><circle cx="140" cy="72" r="6" fill="#3a2020" stroke="#bbb" stroke-width=".6"/><circle class="glow" cx="140" cy="72" r="5" fill="none"/></g>
-  <text x="140" y="92" text-anchor="middle" font-size="8.5" fill="#777" font-family="system-ui">LD1 COM</text>
-  <g id="ld3"><circle cx="320" cy="128" r="5" fill="#ff3b30" filter="url(#glow)"/></g>
-  <text x="320" y="146" text-anchor="middle" font-size="8.5" fill="#777" font-family="system-ui">LD3 PWR</text>
-  <line x1="18" y1="172" x2="382" y2="172" stroke="#c9c9c0" stroke-dasharray="4 5" stroke-width="1.5"/>
-  <text x="30" y="122" font-size="11" font-weight="700" fill="#2b2b2b" font-family="system-ui">NUCLEO-F401RE</text>
-  <text x="30" y="136" font-size="8.5" fill="#888" font-family="system-ui">scheda virtuale</text>`);
-  // B1 e B2
-  g.push(`<g id="b1" style="cursor:pointer"><rect x="72" y="188" width="44" height="44" rx="6" fill="#c9cbd0" stroke="#9a9ca2"/><circle id="b1cap" cx="94" cy="210" r="14" fill="url(#cap)" stroke="#0f3f93"/></g>
-  <text x="94" y="246" text-anchor="middle" font-size="8.5" fill="#555" font-family="system-ui" font-weight="600">B1 USER</text>
-  <g id="b2" style="cursor:pointer"><rect x="284" y="188" width="44" height="44" rx="6" fill="#c9cbd0" stroke="#9a9ca2"/><circle id="b2cap" cx="306" cy="210" r="14" fill="url(#capk)" stroke="#000"/></g>
-  <text x="306" y="246" text-anchor="middle" font-size="8.5" fill="#555" font-family="system-ui" font-weight="600">B2 RESET</text>`);
-  // LD2
-  g.push(`<g id="ld2"><rect x="238" y="328" width="14" height="9" rx="2" fill="#dfe6df" stroke="#9fb39f"/><circle class="core" cx="245" cy="332.5" r="3.4" fill="#2d4a33"/><circle class="glow" cx="245" cy="332.5" r="7" fill="#35ff7a" opacity="0" filter="url(#glow)"/></g>
-  <text x="245" y="350" text-anchor="middle" font-size="8.5" fill="#555" font-family="system-ui" font-weight="600">LD2</text>`);
-  // MCU a 45°
-  g.push(`<g transform="rotate(45 200 400)">`);
-  for (let i = 0; i < 16; i++) {
-    const o = 156 + i * 5.9;
-    g.push(`<rect x="${o}" y="346" width="3" height="10" fill="#b9bcc2"/><rect x="${o}" y="444" width="3" height="10" fill="#b9bcc2"/><rect x="146" y="${o + 200}" width="10" height="3" fill="#b9bcc2"/><rect x="244" y="${o + 200}" width="10" height="3" fill="#b9bcc2"/>`);
-  }
-  g.push(`<rect x="154" y="354" width="92" height="92" rx="4" fill="#1b1d21"/><circle cx="166" cy="366" r="3" fill="#2c2f35"/></g>
-  <text x="200" y="398" text-anchor="middle" font-size="10" fill="#d9dbe0" font-family="system-ui" font-weight="700">STM32</text>
-  <text x="200" y="411" text-anchor="middle" font-size="8" fill="#a9adb5" font-family="system-ui">F401RET6</text>`);
-  // morpho (decorativi)
-  const morpho = [28, 42, 358, 372];
-  for (const x of morpho) for (let i = 0; i < 19; i++) g.push(`<rect x="${x - 5}" y="${262 + i * 18.5 - 5}" width="10" height="10" fill="#26282c" rx="1"/><circle cx="${x}" cy="${262 + i * 18.5}" r="2" fill="#b39b55"/>`);
-  // header Arduino
-  for (const [key, h] of Object.entries(HDR)) {
-    const left = key.startsWith('left');
-    h.labels.forEach((lab, i) => {
-      const y = h.y0 + i * 18, pin = h.pins[i] || '';
-      g.push(`<rect x="${h.x - 7}" y="${y - 7}" width="14" height="14" fill="#141518" rx="1.5"/>`);
-      g.push(`<circle class="hp${pin ? '' : ' np'}" data-pin="${pin}" cx="${h.x}" cy="${y}" r="3.2" fill="#c8a85a"/>`);
-      const tx = left ? h.x + 13 : h.x - 13;
-      g.push(`<text x="${tx}" y="${y + 3.2}" text-anchor="${left ? 'start' : 'end'}" font-size="9" fill="#444" font-family="ui-monospace,Menlo,monospace">${lab}${pin ? `<tspan fill="#9a9a92" font-size="7.5"> ${pin}</tspan>` : ''}</text>`);
-    });
-  }
-  g.push(`<text x="70" y="248" text-anchor="middle" font-size="8" fill="#888" font-family="system-ui">CN6</text><text x="70" y="416" text-anchor="middle" font-size="8" fill="#888" font-family="system-ui">CN8</text>
-  <text x="330" y="250" text-anchor="middle" font-size="8" fill="#888" font-family="system-ui">CN5</text><text x="330" y="440" text-anchor="middle" font-size="8" fill="#888" font-family="system-ui">CN9</text>
-  <rect x="150" y="560" width="100" height="44" rx="4" fill="#e6e6df" stroke="#cfcfc6"/><text x="200" y="586" text-anchor="middle" font-size="9" fill="#9a9a92" font-family="system-ui">STM32 Nucleo-64</text>
-  </svg>`);
-  return g.join('');
+  return `<svg viewBox="-50 -28 390 344" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Scheda NUCLEO-F401RE">
+  <defs><filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+  ${nucleoSVG({ scheda: true })}</svg>`;
 }
 
 function setupBoard() {
@@ -129,7 +68,7 @@ let b1Down = false;
 function pressB1(on) {
   if (b1Down === on) return;
   b1Down = on;
-  $('#b1cap').setAttribute('r', on ? 12.5 : 14);
+  $('#b1cap').setAttribute('r', on ? 6.6 : 7.5);
   holdPin('PC13', on);
 }
 

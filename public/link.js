@@ -9,8 +9,8 @@
 // Il contenuto di un link è un DATO scritto da chiunque: qui si controlla tutto (dimensioni,
 // nomi dei file, tipi) e niente di quello che arriva viene mai usato come HTML.
 import { deflateSync, Inflate, strToU8, strFromU8 } from '../vendor/fflate/esm/browser.js';
-import { parseCproject } from './build.js?v=2026-11-26c';
-import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-26c';
+import { parseCproject } from './build.js?v=2026-11-26e';
+import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-26e';
 
 export const LINK_MAX = 400000;          // caratteri dopo # che si accettano
 const DATI_MAX = 3 * 1024 * 1024;        // JSON scompresso (contro gli "zip bomb")
@@ -110,5 +110,7 @@ export function esercizioPulito(e, files) {
     titolo: pulisci(e.titolo, 120) || 'Esercizio',
     testo: String(e.testo ?? '').replace(/\r\n?/g, '\n').slice(0, 20000),
     sola: Array.isArray(e.sola) ? e.sola.filter(r => typeof r === 'string' && r in files).slice(0, FILE_MAX) : [],
+    // esercizio di una classe (punto N): id dell'esercizio online e nome della classe, per «Consegna»
+    ...(e.classe && /^[0-9a-f-]{36}$/.test(e.classe.es) ? { classe: { es: e.classe.es, nome: pulisci(e.classe.nome, 60) } } : {}),
   };
 }

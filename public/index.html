@@ -9,9 +9,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0b">
 <link rel="apple-touch-icon" href="icone/icona-180.png">
-<link rel="stylesheet" href="style.css?v=2026-11-26c">
-<link rel="stylesheet" href="web.css?v=2026-11-26c">
-<link rel="stylesheet" href="mobile.css?v=2026-11-26c">
+<link rel="stylesheet" href="style.css?v=2026-11-26e">
+<link rel="stylesheet" href="web.css?v=2026-11-26e">
+<link rel="stylesheet" href="mobile.css?v=2026-11-26e">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -94,6 +94,7 @@ if ('serviceWorker' in navigator) {
       <label class="btnlike" title="La cartella di un progetto CubeIDE (quella con il file .ioc), o un intero workspace">📁 Cartella<input id="in-cartella" type="file" webkitdirectory hidden></label>
       <label class="btnlike" title="Uno zip del progetto (anche fatto su Windows), o uno zip esportato da qui">🗜 Zip<input id="in-zip" type="file" accept=".zip,application/zip" hidden></label>
       <button id="btn-esporta" class="ghost small" title="Scarica tutti i tuoi progetti in uno zip, da caricare su un altro computer">⬇ Tutti</button>
+      <button id="btn-classi" class="ghost small" type="button" title="Classi ed esercizi: entra con il codice del prof, apri gli esercizi e consegna; il prof dà gli esercizi e corregge">🎓 Classi</button>
     </div>
     <div class="progazioni" id="progazioni" hidden>
       <span class="muted small">Progetto:</span>
@@ -379,6 +380,11 @@ if ('serviceWorker' in navigator) {
   </form>
 </dialog>
 
+<dialog id="classi-dlg" class="classi-dlg">
+  <div class="cl-testa"><h3>🎓 Classi</h3><button type="button" class="ghost small" onclick="this.closest('dialog').close()" title="Chiudi">✕</button></div>
+  <p class="small cl-errore" data-errore hidden aria-live="polite"></p>
+  <div data-corpo></div>
+</dialog>
 <dialog id="carica-dlg">
   <h3>Carica sulla scheda vera</h3>
   <p class="small">Il sito non sa compilare per il processore ARM della scheda (simula il programma sul computer). Il file da caricare lo fa
@@ -394,6 +400,6 @@ if ('serviceWorker' in navigator) {
     <button type="button" onclick="this.closest('dialog').close()">Chiudi</button>
   </div>
 </dialog>
-<script type="module" src="local-server.js?v=2026-11-26c"></script>
+<script type="module" src="local-server.js?v=2026-11-26e"></script>
 </body>
 </html>

@@ -599,3 +599,23 @@ body[data-vista="breadboard"] .vista-btn.on { background: var(--panel); }
 .carica-controlli .ok { color: var(--ok); }
 .carica-controlli .err { color: var(--err); }
 .dlg-pulsanti { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 12px; }
+
+/* Punto N: classi ed esercizi */
+.classi-dlg { width: min(720px, calc(100vw - 24px)); max-width: none; max-height: calc(100vh - 40px); overflow: auto; }
+.cl-testa { display: flex; align-items: center; justify-content: space-between; }
+.cl-testa h3 { margin: 0; }
+.cl-errore { color: var(--err); background: var(--err-soft); padding: 6px 10px; border-radius: 8px; }
+.cl-errore.ok { color: var(--ok); background: var(--ok-soft); }
+.cl-riga { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.cl-classe { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 10px 12px; background: var(--beige); border: 1px solid var(--beige-2); border-radius: 10px; }
+.cl-codice b { font: 700 20px ui-monospace, Menlo, monospace; letter-spacing: 3px; color: var(--accent); }
+.cl-sez { margin: 8px 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.cl-sez summary { cursor: pointer; font-weight: 600; }
+.cl-form { display: grid; gap: 8px; margin-top: 8px; }
+.cl-form textarea { font: inherit; }
+.cl-es { border-top: 1px solid var(--border); padding: 8px 0; }
+.cl-consegna { white-space: pre-wrap; margin: 4px 0; }
+.cl-voto { color: var(--ok); }
+.cl-tab { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; }
+.cl-membri { margin: 6px 0; padding-left: 18px; }
+.classi-dlg .err { color: var(--err); } .classi-dlg .ok { color: var(--ok); }

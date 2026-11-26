@@ -2,36 +2,43 @@
  {
   "id": "lcd_i2c",
   "nome": "LCD 16x2 I2C",
-  "descr": "Display LCD 16x2 con modulo PCF8574 su I2C1 (PB8 = SCL, PB9 = SDA): scritta e contatore."
+  "descr": "Display LCD 16x2 con modulo PCF8574 su I2C1 (PB8 = SCL, PB9 = SDA): scritta e contatore.",
+  "consegna": "Sulla seconda riga mostra i secondi passati dall'accensione (HAL_GetTick() / 1000) al posto del contatore. Attenzione: dopo il comando 0x01 servono 2 ms."
  },
  {
   "id": "oled_i2c",
   "nome": "OLED 128x64 I2C",
-  "descr": "Display OLED SSD1306 su I2C1 a 400 kHz: cornice e pallina che rimbalza."
+  "descr": "Display OLED SSD1306 su I2C1 a 400 kHz: cornice e pallina che rimbalza.",
+  "consegna": "Fai rimbalzare due palline invece di una. Poi prova a togliere la riga 0x8D 0x14 dalla sequenza di avvio: cosa succede e perché?"
  },
  {
   "id": "oled_spi",
   "nome": "OLED 128x64 SPI",
-  "descr": "Display OLED SSD1306 su SPI1 (PA5 = SCK, PA7 = MOSI, CS = PB6, DC = PA9, RES = PC7)."
+  "descr": "Display OLED SSD1306 su SPI1 (PA5 = SCK, PA7 = MOSI, CS = PB6, DC = PA9, RES = PC7).",
+  "consegna": "Disegna una barra orizzontale che si riempie da sinistra a destra in 5 secondi, poi ricomincia."
  },
  {
   "id": "lm75",
   "nome": "Temperatura LM75",
-  "descr": "Sensore LM75 su I2C1 con le due resistenze di pull-up da 4,7 kΩ: temperatura sul monitor seriale (doppio clic sul sensore per cambiarla)."
+  "descr": "Sensore LM75 su I2C1 con le due resistenze di pull-up da 4,7 kΩ: temperatura sul monitor seriale (doppio clic sul sensore per cambiarla).",
+  "consegna": "Accendi LD2 quando la temperatura supera 30 °C e spegnilo sotto 28 °C (isteresi). Prova con il cursore del sensore."
  },
  {
   "id": "mpu6050",
   "nome": "Inclinazione MPU6050",
-  "descr": "Accelerometro MPU6050 (modulo GY-521) su I2C1: rollio e beccheggio in gradi sul monitor seriale."
+  "descr": "Accelerometro MPU6050 (modulo GY-521) su I2C1: rollio e beccheggio in gradi sul monitor seriale.",
+  "consegna": "Accendi LD2 quando la scheda è inclinata di più di 30° in qualsiasi direzione."
  },
  {
   "id": "eeprom",
   "nome": "EEPROM 24C02",
-  "descr": "Memoria 24C02 su I2C1: conta le accensioni (il numero resta nel progetto anche dopo Stop) e rilegge una scritta."
+  "descr": "Memoria 24C02 su I2C1: conta le accensioni (il numero resta nel progetto anche dopo Stop) e rilegge una scritta.",
+  "consegna": "Salva nella EEPROM anche quante volte è stato premuto il pulsante B1 e mostralo all'accensione."
  },
  {
   "id": "hcsr04",
   "nome": "Ultrasuoni HC-SR04",
-  "descr": "Sensore HC-SR04: Trig = PA8 (D7), Echo = PB10 (D6); TIM2 conta i µs e la distanza va sul monitor seriale."
+  "descr": "Sensore HC-SR04: Trig = PA8 (D7), Echo = PB10 (D6); TIM2 conta i µs e la distanza va sul monitor seriale.",
+  "consegna": "Fai lampeggiare LD2 sempre più veloce man mano che l'ostacolo si avvicina (sotto 10 cm acceso fisso)."
  }
 ]

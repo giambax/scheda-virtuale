@@ -19,6 +19,10 @@
 //   segnalazioni (supabase/migrazione-3-segnalazioni.sql): invia(s) → {id} · mie() · admin() → bool
 //         tutte({stato}) · dettaglio(id) · aggiorna(id, {stato, risposta}) · nomi(ids) → [{id, username}]
 //         errore .code 'assente' se la migrazione non è ancora stata applicata (tabella o funzione mancante)
+//   classi (supabase/migrazione-5-classi.sql, punto N): docente() · mie() · crea(nome) · entra(codice) · membri(c) ·
+//         aggiungiProf(c, nome, si) · togli(c, utente?) · archivia(c, si) · nominaDocente(nome, si) · esercizi(c) · esercizio(id) ·
+//         salvaEsercizio({classe, titolo, consegna, progetto, sola, scadenza, id}) · eliminaEsercizio(id) · consegna(es, progetto) ·
+//         miaConsegna(es) · consegne(es) · progettoConsegna(id) · valuta(id, commento, voto); .code 'assente' = migrazione da applicare
 // Errori (.code): 'rete' (offline: il sito resta sulla copia locale e riprova dopo), 'sessione'
 // (scaduta: bisogna rientrare), 'limite' (troppi progetti o MB: si salta solo quel progetto),
 // 'nome', 'auth', 'dati', 'errore'.
@@ -42,6 +46,7 @@ export function suggestUsername(user) {
 // testi della segnalazione: limiti uguali a quelli del database (migrazione-3-segnalazioni.sql)
 export const SEGN = { titolo: [3, 120], descrizione: [10, 5000], passi: [0, 3000], atteso: [0, 2000], browser: [0, 300], versione: [0, 40], registro: [0, 20000], progetto: 1048576 };
 export const SEGN_STATI = ['aperta', 'in corso', 'risolta', 'chiusa'];
+export const CLASSI_ASSENTE = 'Le classi non sono ancora attive su questo sito: manca un aggiornamento del database (lo fa l\'amministratore). Il resto del sito funziona.';
 const SEGN_ASSENTE = 'Le segnalazioni non sono ancora attive su questo sito (manca un aggiornamento del database). Il testo resta qui: riprova più tardi.';
 // controlla e ripulisce una segnalazione prima di mandarla (il database ricontrolla tutto)
 export function segnalazionePulita(s) {
@@ -388,6 +393,35 @@ export async function supabaseRemote(cfg, createClient = null, go = null) {
       mie: () => data(() => sb.from('condivisioni').select('id,tipo,nome,creata,revocata,letture').order('creata', { ascending: false }).limit(50)),
       revoca: id => data(() => sb.from('condivisioni').update({ revocata: true }).eq('id', id).select('id')),
     },
+    classi: (() => {
+      const d = fn => data(fn).catch(e => { throw e.code === 'assente' ? new RemoteError(CLASSI_ASSENTE, 'assente') : e; });
+      const rpc = (f, a) => d(() => sb.rpc(f, a));
+      const uno = r => Array.isArray(r) ? r[0] || null : r;
+      return {
+        docente: () => rpc('is_docente'),
+        mie: () => rpc('mie_classi'),
+        crea: async nome => uno(await rpc('crea_classe', { nome })),
+        entra: async codice => uno(await rpc('entra_in_classe', { cod: codice })),
+        membri: c => rpc('membri_classe', { c }),
+        aggiungiProf: (c, nome, si = true) => rpc('aggiungi_docente_classe', { c, nome, si }),
+        togli: (c, u = null) => rpc('togli_dalla_classe', { c, u }),
+        archivia: (c, si = true) => rpc('archivia_classe', { c, si }),
+        nominaDocente: (nome, si = true) => rpc('nomina_docente', { nome, si }),
+        esercizi: c => d(() => sb.from('esercizi').select('id,classe_id,titolo,consegna,sola,scadenza,creato').eq('classe_id', c).order('creato', { ascending: false })),
+        esercizio: id => d(() => sb.from('esercizi').select('*').eq('id', id).maybeSingle()),
+        salvaEsercizio: x => rpc('salva_esercizio', { c: x.classe, titolo: x.titolo, consegna: x.consegna || '', progetto: x.progetto, sola: x.sola || [], scadenza: x.scadenza || null, e: x.id || null }),
+        eliminaEsercizio: e => rpc('elimina_esercizio', { e }),
+        consegna: async (e, progetto) => uno(await rpc('consegna_esercizio', { e, progetto })),
+        async miaConsegna(e) {
+          await need();
+          const { data: s0 } = await sb.auth.getSession();
+          return uno(await d(() => sb.from('consegne').select('id,versione,consegnata,voto,commento,corretta').eq('esercizio_id', e).eq('studente', s0.session.user.id)));
+        },
+        consegne: e => rpc('consegne_esercizio', { e }),
+        progettoConsegna: async id => (uno(await d(() => sb.from('consegne').select('progetto').eq('id', id))) || {}).progetto || null,
+        valuta: (c, commento, voto) => rpc('valuta_consegna', { c, commento, voto }),
+      };
+    })(),
   };
 }
 
@@ -576,5 +610,74 @@ export function fintoRemote(cfg = {}, go = null) {
       async mie() { const db = load(), id = me(db); return (db.condivisioni || []).filter(r => r.owner === id).map(({ id, tipo, nome, creata, revocata, letture }) => ({ id, tipo, nome, creata: new Date(creata).toISOString(), revocata, letture })).reverse(); },
       async revoca(cid) { const db = load(), id = me(db); const r = (db.condivisioni || []).find(x => x.id === cid && x.owner === id); if (r) { r.revocata = true; save(db); } return r ? [{ id: cid }] : []; },
     },
+    // classi finte: stesse regole della migrazione 5 (docenti = db.docenti, ID); window.SV_FINTO_NO_CLASSI = migrazione assente
+    classi: (() => {
+      const L = (m) => new RemoteError(m, 'limite');
+      const pronta = db => { if (window.SV_FINTO_NO_CLASSI) throw new RemoteError(CLASSI_ASSENTE, 'assente'); for (const k of ['classi', 'membri', 'esercizi', 'consegne', 'docenti', 'admins']) db[k] = db[k] || []; return me(db); };
+      const uid = () => crypto.randomUUID();
+      const ruolo = (db, c, u) => (db.membri.find(m => m.c === c && m.u === u) || {}).ruolo || null;
+      const nome = (db, u) => (db.users.find(x => x.id === u) || {}).username || null;
+      const perNome = (db, n) => { const u = db.users.find(x => x.username === String(n || '').trim().toLowerCase()); if (!u) throw L(`nessun utente si chiama ${n}`); return u.id; };
+      const docente = (db, u) => db.admins.includes(u) || db.docenti.includes(u);
+      const grande = p => { if (!p || typeof p !== 'object' || JSON.stringify(p).length > 2097152) throw L('un progetto può essere al massimo di 2 MB'); };
+      const tardi = (x, t) => !!(x.scadenza && Date.parse(t) > Date.parse(x.scadenza));
+      const fai = fn => async (...a) => { const db = load(), u = pronta(db); const r = await fn(db, u, ...a); save(db); return r; };
+      return {
+        docente: fai((db, u) => docente(db, u)),
+        mie: fai((db, u) => db.membri.filter(m => m.u === u).map(m => { const k = db.classi.find(x => x.id === m.c); return { id: k.id, nome: k.nome, codice: m.ruolo === 'prof' ? k.codice : null, ruolo: m.ruolo, creatore: k.creatore === u, archiviata: k.archiviata, membri: db.membri.filter(x => x.c === k.id && x.ruolo === 'studente').length, esercizi: db.esercizi.filter(e => e.classe_id === k.id).length }; })),
+        crea: fai((db, u, n) => {
+          if (!docente(db, u)) throw L('solo i docenti creano le classi (chiedi all\'amministratore del sito)');
+          const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', codice = [...crypto.getRandomValues(new Uint8Array(6))].map(b => a[b % 32]).join('');
+          const k = { id: uid(), nome: String(n).trim().slice(0, 60), codice, creatore: u, archiviata: false };
+          db.classi.push(k); db.membri.push({ c: k.id, u, ruolo: 'prof' });
+          return { id: k.id, codice };
+        }),
+        entra: fai((db, u, cod) => {
+          const k = db.classi.find(x => x.codice === String(cod || '').trim().toUpperCase() && !x.archiviata);
+          if (!k) return null;
+          if (!ruolo(db, k.id, u)) db.membri.push({ c: k.id, u, ruolo: 'studente' });
+          return { id: k.id, nome: k.nome };
+        }),
+        membri: fai((db, u, c) => ruolo(db, c, u) === 'prof' ? db.membri.filter(m => m.c === c).map(m => ({ user_id: m.u, username: nome(db, m.u), ruolo: m.ruolo })) : []),
+        aggiungiProf: fai((db, u, c, n, si = true) => {
+          if ((db.classi.find(k => k.id === c) || {}).creatore !== u) throw L('solo chi ha creato la classe sceglie gli altri prof');
+          const v = perNome(db, n), m = db.membri.find(x => x.c === c && x.u === v);
+          if (si) { if (m) m.ruolo = 'prof'; else db.membri.push({ c, u: v, ruolo: 'prof' }); } else if (m) m.ruolo = 'studente';
+          return String(n).toLowerCase();
+        }),
+        togli: fai((db, u, c, v = null) => { v = v || u; if (v !== u && ruolo(db, c, u) !== 'prof') throw L('solo un prof della classe toglie gli altri'); db.membri = db.membri.filter(m => !(m.c === c && m.u === v)); }),
+        archivia: fai((db, u, c, si = true) => { const k = db.classi.find(x => x.id === c && x.creatore === u); if (!k) throw L('solo chi ha creato la classe la archivia'); k.archiviata = si; }),
+        nominaDocente: fai((db, u, n, si = true) => { if (!db.admins.includes(u)) throw L('solo l\'amministratore nomina i docenti'); const v = perNome(db, n); db.docenti = db.docenti.filter(x => x !== v); if (si) db.docenti.push(v); return String(n).toLowerCase(); }),
+        esercizi: fai((db, u, c) => ruolo(db, c, u) ? db.esercizi.filter(e => e.classe_id === c).map(({ progetto, ...e }) => e).reverse() : []),
+        esercizio: fai((db, u, id) => { const e = db.esercizi.find(x => x.id === id); return e && ruolo(db, e.classe_id, u) ? { ...e } : null; }),
+        salvaEsercizio: fai((db, u, x) => {
+          if (ruolo(db, x.classe, u) !== 'prof') throw L('solo i prof della classe danno gli esercizi');
+          grande(x.progetto);
+          const e = { id: x.id || uid(), classe_id: x.classe, titolo: String(x.titolo || '').trim().slice(0, 120), consegna: String(x.consegna || '').slice(0, 20000), progetto: x.progetto, sola: (x.sola || []).slice(0, 50), scadenza: x.scadenza || null, creato: new Date().toISOString() };
+          if (!e.titolo) throw L('il titolo va da 1 a 120 caratteri');
+          db.esercizi = db.esercizi.filter(y => y.id !== e.id); db.esercizi.push(e);
+          return e.id;
+        }),
+        eliminaEsercizio: fai((db, u, id) => { const e = db.esercizi.find(x => x.id === id); if (!e || ruolo(db, e.classe_id, u) !== 'prof') throw L('solo i prof della classe tolgono gli esercizi'); db.esercizi = db.esercizi.filter(x => x.id !== id); db.consegne = db.consegne.filter(c => c.esercizio_id !== id); }),
+        consegna: fai((db, u, id, progetto) => {
+          const e = db.esercizi.find(x => x.id === id);
+          if (!e || !ruolo(db, e.classe_id, u)) throw L('esercizio non trovato (sei nella classe?)');
+          if (db.classi.find(k => k.id === e.classe_id).archiviata) throw L('la classe è archiviata, non si consegna più');
+          grande(progetto);
+          let c = db.consegne.find(x => x.esercizio_id === id && x.studente === u);
+          if (c) Object.assign(c, { progetto, versione: c.versione + 1, consegnata: new Date().toISOString() });
+          else db.consegne.push(c = { id: uid(), esercizio_id: id, studente: u, progetto, versione: 1, consegnata: new Date().toISOString(), voto: '', commento: '', corretta: null });
+          return { versione: c.versione, consegnata: c.consegnata, in_ritardo: tardi(e, c.consegnata) };
+        }),
+        miaConsegna: fai((db, u, id) => { const c = db.consegne.find(x => x.esercizio_id === id && x.studente === u); return c ? (({ progetto, ...r }) => r)(c) : null; }),
+        consegne: fai((db, u, id) => {
+          const e = db.esercizi.find(x => x.id === id);
+          if (!e || ruolo(db, e.classe_id, u) !== 'prof') return [];
+          return db.membri.filter(m => m.c === e.classe_id && m.ruolo === 'studente').map(m => { const c = db.consegne.find(x => x.esercizio_id === id && x.studente === m.u); return { studente: m.u, username: nome(db, m.u), consegna_id: c ? c.id : null, versione: c ? c.versione : null, consegnata: c ? c.consegnata : null, in_ritardo: c ? tardi(e, c.consegnata) : false, voto: c ? c.voto : null, commento: c ? c.commento : null, corretta: c ? c.corretta : null }; });
+        }),
+        progettoConsegna: fai((db, u, id) => { const c = db.consegne.find(x => x.id === id); if (!c) return null; const e = db.esercizi.find(x => x.id === c.esercizio_id); return c.studente === u || ruolo(db, e.classe_id, u) === 'prof' ? c.progetto : null; }),
+        valuta: fai((db, u, id, commento, voto) => { const c = db.consegne.find(x => x.id === id), e = c && db.esercizi.find(x => x.id === c.esercizio_id); if (!e || ruolo(db, e.classe_id, u) !== 'prof') throw L('solo i prof della classe correggono'); Object.assign(c, { commento: String(commento || '').slice(0, 5000), voto: String(voto || '').trim().slice(0, 20), corretta: new Date().toISOString() }); }),
+      };
+    })(),
   };
 }

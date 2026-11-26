@@ -3,7 +3,7 @@
 // Stessa logica di build() in scheda-virtuale/server.js, ma con clang in
 // WebAssembly (YoWASP) e un file system virtuale in memoria.
 
-import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-26c';
+import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-26e';
 
 // Memoria lineare del WebAssembly (wasm-ld con --stack-first):
 //   0x000000–0x700000  stack (se trabocca si esce sotto lo 0 → errore, come un HardFault)

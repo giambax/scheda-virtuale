@@ -6,8 +6,8 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-26c';
-import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26c';
+import * as K from './circuito.js?v=2026-11-26e';
+import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26e';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -32,24 +32,9 @@ window.BB = B;
 // Disegno statico: Nucleo + breadboard
 const svgEl = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (parent) parent.appendChild(e); return e; };
 function disegnoStatico() {
-  const N = K.NUCLEO;
   let s = '';
-  // Nucleo
-  s += `<rect x="${N.x * P - 26}" y="${N.y * P}" width="${(N.w + 1) * P + 26}" height="${N.h * P}" rx="6" fill="#f2f2f2" stroke="#9aa0a6"/>`;
-  s += `<rect x="${N.x * P + 60}" y="${N.y * P + 4}" width="180" height="78" rx="4" fill="#e6e6e6" stroke="#b0b4ba"/>`;
-  s += `<text x="${N.x * P + 150}" y="${N.y * P + 30}" font-size="11" text-anchor="middle" fill="#455" font-family="sans-serif">ST-LINK/V2-1</text>`;
-  s += `<rect x="${N.x * P + 130}" y="${N.y * P - 6}" width="40" height="18" rx="2" fill="#aab" stroke="#778"/>`;
-  s += `<text x="${N.x * P + 150}" y="${N.y * P + 104}" font-size="12" font-weight="bold" text-anchor="middle" fill="#1d3a6b" font-family="sans-serif">NUCLEO-F401RE</text>`;
-  s += `<rect x="${N.x * P + 110}" y="${N.y * P + 190}" width="80" height="80" fill="#2b2b2b" stroke="#111"/><text x="${N.x * P + 150}" y="${N.y * P + 234}" font-size="8" text-anchor="middle" fill="#ccc" font-family="sans-serif">STM32F401RE</text>`;
-  // LD2 e B1 (disegnati; LD2 si accende come sulla scheda)
-  s += `<circle id="bb-ld2" cx="${N.x * P + 168}" cy="${N.y * P + 150}" r="5" fill="#2d4a33"/><text x="${N.x * P + 176}" y="${N.y * P + 153}" font-size="7" fill="#455" font-family="sans-serif">LD2</text>`;
-  s += `<rect x="${N.x * P + 80}" y="${N.y * P + 330}" width="26" height="26" rx="3" fill="#ddd" stroke="#888"/><circle cx="${N.x * P + 93}" cy="${N.y * P + 343}" r="8" fill="#1e5bd8"/><text x="${N.x * P + 93}" y="${N.y * P + 370}" font-size="8" text-anchor="middle" fill="#455" font-family="sans-serif">B1</text>`;
-  s += `<text x="${1.5 * P}" y="${11 * P - 2}" font-size="8" text-anchor="middle" fill="#455" font-family="sans-serif">CN7</text><text x="${27.5 * P}" y="${11 * P - 2}" font-size="8" text-anchor="middle" fill="#455" font-family="sans-serif">CN10</text>`;
-  s += `<text x="${5 * P}" y="${13 * P - 2}" font-size="6" text-anchor="middle" fill="#455" font-family="sans-serif">CN6</text><text x="${24 * P}" y="${9 * P - 2}" font-size="6" text-anchor="middle" fill="#455" font-family="sans-serif">CN5</text>`;
-  // connettori: strisce nere sotto i fori
-  s += `<rect x="${0.5 * P}" y="${11.5 * P}" width="${2 * P}" height="${19 * P}" fill="#222"/><rect x="${26.5 * P}" y="${11.5 * P}" width="${2 * P}" height="${19 * P}" fill="#222"/>`;
-  s += `<rect x="${4.5 * P}" y="${13.5 * P}" width="${P}" height="${8 * P}" fill="#222"/><rect x="${4.5 * P}" y="${22.5 * P}" width="${P}" height="${6 * P}" fill="#222"/>`;
-  s += `<rect x="${23.5 * P}" y="${9.5 * P}" width="${P}" height="${10 * P}" fill="#222"/><rect x="${23.5 * P}" y="${20.5 * P}" width="${P}" height="${8 * P}" fill="#222"/>`;
+  // Nucleo disegnata come quella vera (nucleo.js, punto O): stessa figura della vista Scheda
+  s += nucleoSVG();
   // le breadboard sono componenti "tavola" (punto J): si disegnano con gli altri, sotto (tavolaSVG)
   // nomi dei pin accanto ai connettori: STM32 sui Morpho (CN7, CN10), Arduino + STM32 sugli Arduino
   // (CN5, CN6, CN8, CN9). Allontanando la vista spariscono (classe "lontano"); il dettaglio resta nella riga in basso.
@@ -69,7 +54,9 @@ function disegnoStatico() {
       lato = cn === 5 || cn === 9 ? -1 : 1;
     }
     if (!t || t === 'NC') continue;
-    const pw = /^(5V|3V3|U5V|E5V|VIN|VDD|AVDD|IOREF)$/.test(t) ? ' fill="#b3261e"' : /^(GND|AGND)$/.test(t) ? ' fill="#111"' : '';
+    // i nomi della fila esterna dei Morpho stanno fuori dalla scheda, sul fondo del banco (scuro o chiaro)
+    const fuori = (cn === 7 && f.x === 1) || (cn === 10 && f.x === 28);
+    const pw = /^(5V|3V3|U5V|E5V|VIN|VDD|AVDD|IOREF)$/.test(t) ? ' fill="#b3261e"' : /^(GND|AGND)$/.test(t) && !fuori ? ' fill="#111"' : fuori ? ' fill="var(--muted)"' : '';
     s += `<text x="${(f.x + lato * 0.5) * P}" y="${f.y * P + fs * 0.36}" font-size="${fs}" text-anchor="${lato < 0 ? 'end' : 'start'}"${pw}>${esc(t)}</text>`;
   }
   s += '</g>';

@@ -3,18 +3,18 @@
 // ascoltano /api/events. Qui fetch ed EventSource vengono intercettati e la
 // stessa API è fatta con IndexedDB (progetti per nome utente), un worker che
 // compila (clang in WebAssembly) e un worker che esegue la scheda.
-import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-25m';
-import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-25m';
-import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-25m';
+import { autoDevices, cleanDevices, makeDevice, deviceSimLines, pinPP, DEV_TYPES } from './devlogic.js?v=2026-11-26a';
+import { makeInput, writeInput } from './sim-runtime.js?v=2026-11-26a';
+import { readIoc, pinsFromMainH, mcuDefine } from './build.js?v=2026-11-26a';
 import { unzipSync, zipSync } from '../vendor/fflate/esm/browser.js';
 
 const dec = new TextDecoder();
 
-import * as CFG from './config.js?v=2026-11-25m';
-import { supabaseRemote, fintoRemote, leggiCorto } from './remote.js?v=2026-11-25m';
-import { sincronizza } from './sync.js?v=2026-11-25m';
-import { leggiLink, esercizioPulito } from './link.js?v=2026-11-25m';
-import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-25m';
+import * as CFG from './config.js?v=2026-11-26a';
+import { supabaseRemote, fintoRemote, leggiCorto } from './remote.js?v=2026-11-26a';
+import { sincronizza } from './sync.js?v=2026-11-26a';
+import { leggiLink, esercizioPulito } from './link.js?v=2026-11-26a';
+import { pulisciBreadboard, daSalvare } from './circuito.js?v=2026-11-26a';
 
 // ------------------------------------------------------------------
 // Utente e progetti in IndexedDB.
@@ -363,7 +363,7 @@ function absorb(line) {
 
 // ------------------------------------------------------------------
 // Compilatore (worker che resta vivo: il clang da ~100 MB si carica una volta sola)
-const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-25m', import.meta.url), { type: 'module' });
+const compiler = new Worker(new URL('./compiler-worker.js?v=2026-11-26a', import.meta.url), { type: 'module' });
 let compSeq = 0;
 const compPending = new Map();
 let compReady = false;
@@ -415,7 +415,7 @@ function startSim(wasm) {
   state.startedAt = Date.now();
   state.paused = false;
   const sab = makeInput();
-  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-25m', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./sim-worker.js?v=2026-11-26a', import.meta.url), { type: 'module' });
   const s = { worker, sab };
   sim = s;
   let buf = '', batch = [], flushT = null;
@@ -453,7 +453,9 @@ function startSim(wasm) {
   if (state.speed !== 1) writeInput(sab, [`S ${state.speed}`]);
   drivenPins = [];
   const go = () => worker.postMessage({ wasm, sab });
-  if (state.project) devicesOf(state.project.id).then(r => { pushDevices(r.devices); go(); }); else go();
+  // dispositivi I2C/SPI e sensori della breadboard (bus.js) prima di partire
+  const bus = () => { if (state.project && window.bbSimLines) writeInput(sab, window.bbSimLines(state.project.id)); };
+  if (state.project) devicesOf(state.project.id).then(r => { pushDevices(r.devices); bus(); go(); }); else go();
   setStatus('running', { buildErrors: [] });
 }
 
@@ -565,7 +567,7 @@ async function handle(url, body) {
       if (lastWasm && state.project) { log('info', 'Reset'); startSim(lastWasm); return { ok: true }; }
       return { error: 'niente da resettare' };
     case '/api/cmd': {
-      const lines = (Array.isArray(body.lines) ? body.lines : [body.line]).filter(l => typeof l === 'string' && /^[IVRSPTKBZ][ -~]{0,4000}$/.test(l));
+      const lines = (Array.isArray(body.lines) ? body.lines : [body.line]).filter(l => typeof l === 'string' && /^[IVRSPTKBZE][ -~]{0,4000}$/.test(l));
       for (const l of lines) {
         if (l[0] === 'S') state.speed = parseFloat(l.slice(1)) || 1;
         if (l[0] === 'P') { state.paused = l.trim().endsWith('1'); send('status', { state: { ...state } }); }
@@ -714,9 +716,10 @@ window.SV = {
     return names;
   },
   // progetto nuovo dal modello Nucleo-F401RE (modello/nucleo-f401re.json)
-  async newProject(nome) {
-    const m = await (await fetch('modello/nucleo-f401re.json?v=2026-11-25m')).json();
-    nome = await freeName(nome);
+  // esempio: id di public/esempi (progetto pronto con il circuito della breadboard)
+  async newProject(nome, esempio) {
+    const m = await (await fetch(esempio ? `esempi/${encodeURIComponent(esempio)}.json?v=2026-11-26a` : 'modello/nucleo-f401re.json?v=2026-11-26a')).json();
+    nome = await freeName(nome || m.nome);
     const enc = new TextEncoder(), files = {};
     for (const [k, v] of Object.entries(m.files)) {
       if (k.endsWith('.ioc')) files[nome + '.ioc'] = enc.encode(v.replace(/^ProjectManager\.ProjectName=.*$/m, 'ProjectManager.ProjectName=' + nome));
@@ -845,7 +848,7 @@ if (ANTEPRIMA) await preparaAnteprima();
 else if (ACCOUNT) {
   // account online: accesso/iscrizione prima di tutto il resto (auth.js)
   remote = CFG.BACKEND === 'finto' ? fintoRemote(CFG) : await supabaseRemote(CFG);
-  const { accedi } = await import('./auth.js?v=2026-11-25m');
+  const { accedi } = await import('./auth.js?v=2026-11-26a');
   account = await accedi(remote);
   if (account && account.ospite) {
     // localStorage dell'ospite: solo in memoria (temi, schede, guida… non restano nel browser)
@@ -872,20 +875,20 @@ else if (ACCOUNT) {
 }
 const salvato = ANTEPRIMA ? null : await salvaDaAnteprima();
 const portati = ACCOUNT ? await portaDaOspite() : [];
-for (const s of ['devices.js?v=2026-11-25m', 'app.js?v=2026-11-25m', 'analizzatore.js?v=2026-11-25m', 'web-ui.js?v=2026-11-25m']) await loadScript(s);
-await import('./editor.js?v=2026-11-25m');
-await import('./condividi.js?v=2026-11-25m');
-await import('./debug.js?v=2026-11-25m');
-await import('./breadboard.js?v=2026-11-25m');
-await import('./segnala.js?v=2026-11-25m');
-await import('./schema.js?v=2026-11-25m');
-await import('./layout.js?v=2026-11-25m');
-await import('./aggiorna.js?v=2026-11-25m');
-await import('./cartella.js?v=2026-11-25m');
-await import('./tocco.js?v=2026-11-25m');
+for (const s of ['devices.js?v=2026-11-26a', 'app.js?v=2026-11-26a', 'analizzatore.js?v=2026-11-26a', 'web-ui.js?v=2026-11-26a']) await loadScript(s);
+await import('./editor.js?v=2026-11-26a');
+await import('./condividi.js?v=2026-11-26a');
+await import('./debug.js?v=2026-11-26a');
+await import('./breadboard.js?v=2026-11-26a');
+await import('./segnala.js?v=2026-11-26a');
+await import('./schema.js?v=2026-11-26a');
+await import('./layout.js?v=2026-11-26a');
+await import('./aggiorna.js?v=2026-11-26a');
+await import('./cartella.js?v=2026-11-26a');
+await import('./tocco.js?v=2026-11-26a');
 if (LINK && LINK.errore) alert(LINK.errore);
 if (portati.length) { log('info', `Portati nel tuo account dalla sessione da ospite: ${portati.join(', ')}`); await loadProjects(); await selectProject(portati[0]); }
-if (OSPITE) await import('./ospite.js?v=2026-11-25m');
+if (OSPITE) await import('./ospite.js?v=2026-11-26a');
 if (ANTEPRIMA || salvato) {
   await loadProjects();
   await selectProject(ANTEPRIMA ? LINK.nome : salvato);

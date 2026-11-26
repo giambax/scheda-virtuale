@@ -1,0 +1,37 @@
+[
+ {
+  "id": "lcd_i2c",
+  "nome": "LCD 16x2 I2C",
+  "descr": "Display LCD 16x2 con modulo PCF8574 su I2C1 (PB8 = SCL, PB9 = SDA): scritta e contatore."
+ },
+ {
+  "id": "oled_i2c",
+  "nome": "OLED 128x64 I2C",
+  "descr": "Display OLED SSD1306 su I2C1 a 400 kHz: cornice e pallina che rimbalza."
+ },
+ {
+  "id": "oled_spi",
+  "nome": "OLED 128x64 SPI",
+  "descr": "Display OLED SSD1306 su SPI1 (PA5 = SCK, PA7 = MOSI, CS = PB6, DC = PA9, RES = PC7)."
+ },
+ {
+  "id": "lm75",
+  "nome": "Temperatura LM75",
+  "descr": "Sensore LM75 su I2C1 con le due resistenze di pull-up da 4,7 kΩ: temperatura sul monitor seriale (doppio clic sul sensore per cambiarla)."
+ },
+ {
+  "id": "mpu6050",
+  "nome": "Inclinazione MPU6050",
+  "descr": "Accelerometro MPU6050 (modulo GY-521) su I2C1: rollio e beccheggio in gradi sul monitor seriale."
+ },
+ {
+  "id": "eeprom",
+  "nome": "EEPROM 24C02",
+  "descr": "Memoria 24C02 su I2C1: conta le accensioni (il numero resta nel progetto anche dopo Stop) e rilegge una scritta."
+ },
+ {
+  "id": "hcsr04",
+  "nome": "Ultrasuoni HC-SR04",
+  "descr": "Sensore HC-SR04: Trig = PA8 (D7), Echo = PB10 (D6); TIM2 conta i µs e la distanza va sul monitor seriale."
+ }
+]

@@ -6,7 +6,8 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-25m';
+import * as K from './circuito.js?v=2026-11-26a';
+import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26a';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';
@@ -145,6 +146,7 @@ function compSVG(c) {
     case 'seg7': return `<rect x="-6" y="-4" width="52" height="${6 * P + 8}" rx="2" fill="#151515"/>${cifraSVG(id, 0, 6, 4, 0.33)}`;
     case 'seg7x3': return `<rect x="-6" y="-5" width="62" height="${4 * P + 10}" rx="2" fill="#151515"/>${[0, 1, 2].map(d => cifraSVG(id, d, 0 + d * 19, 2, 0.21)).join('')}`;
   }
+  if (TIPI_BUS.includes(c.type)) return busSVG(c);
   return '';
 }
 function etichetta(c) {
@@ -302,6 +304,34 @@ function costruisci() {
   for (const k of [...B.inviati.keys()]) if (!B.pinCirc.includes(k)) { const { p, pin } = parseKey(k); cmd(`I ${p} ${pin} -1`); B.inviati.delete(k); }
   B.segnalati.clear(); B.problemi.clear();
   for (const p of B.corti) segnala(p);
+  // dispositivi I2C/SPI e sensori (bus.js): se cambia come sono collegati, il simulatore li riceve di nuovo
+  const righe = configBus(B.bb, B.net);
+  for (const p of BUS.problemi) segnala(p);
+  const chiave = righe.filter(r => !/^E \d+ [vm] /.test(r)).join('|');
+  if (chiave !== B.busChiave) { B.busChiave = chiave; if (inCorsa()) cmd('E -', ...righe); }
+}
+// righe dei dispositivi per la scheda che parte (local-server.js, startSim)
+window.bbSimLines = id => {
+  if (!B.caricato || B.proj !== id) return ['E -'];
+  if (B.dirtyCirc) costruisci();
+  return ['E -', ...configBus(B.bb, B.net)];
+};
+window.bbOnF = line => onF(line, (c, a, hex) => {
+  const x = B.bb.comps.find(x => x.id === c.id);
+  if (!x || !K.EEPROM[x.type]) return;
+  x.mem = K.scriviMem(x.mem, K.EEPROM[x.type], a, hex);          // resta nel progetto, senza passare dall'annulla
+  clearTimeout(B.salvaT); B.salvaT = setTimeout(salvaOra, 800);
+  if (B.pannello === x.id) apriPannello(x.id);
+});
+// cursori dei sensori: il valore va subito al simulatore; salva = a fine trascinamento
+function impostaSensore(c, k, v, salva) {
+  const x = B.bb.comps.find(x => x.id === c.id);
+  if (!x) return;
+  if (k === 'mem') { x.mem = []; B.busChiave = ''; costruisci(); }
+  else x.opt[k] = v;
+  const st = BUS.dev.get(x.id);
+  if (st && k !== 'mem' && inCorsa()) cmd(...valori(x, st.i));
+  if (salva) { clearTimeout(B.salvaT); B.salvaT = setTimeout(salvaOra, 800); if (k === 'mem') apriPannello(x.id); }
 }
 const inCorsa = () => S.server.status === 'running' && S.server.project && S.server.project.id === B.proj;
 function statoPin() {
@@ -597,7 +627,7 @@ function tracciaOsc(c) {
 // pannelli (finestre sul banco, si spostano trascinando il titolo)
 function apriPannello(id) {
   const c = B.bb.comps.find(c => c.id === id);
-  if (!c || !K.STRUMENTI.includes(c.type)) return;
+  if (!c || !(K.STRUMENTI.includes(c.type) || SENSORI.includes(c.type))) return;
   chiudiPannello();
   B.pannello = id;
   const d = document.createElement('div');
@@ -626,6 +656,7 @@ function opzStrumento(c, k, v) {
   if (B.pannello === c.id) apriPannello(c.id);
 }
 function corpoPannello(c, box) {
+  if (SENSORI.includes(c.type)) { busPannello(c, box, (k, v, salva) => impostaSensore(c, k, v, salva), esc); return; }
   const o = c.opt, sel = (k, vals, fmt = x => x) => `<select data-k="${k}">${vals.map(v => `<option value="${v}" ${String(v) === String(o[k]) ? 'selected' : ''}>${esc(fmt(v))}</option>`).join('')}</select>`;
   const vals = k => K.OPZIONI[c.type].find(x => x[0] === k)[2];
   if (c.type === 'dmm') box.innerHTML = `<div class="sp-lcd"><span data-pv>—</span><small data-pu></small></div>
@@ -796,6 +827,7 @@ function aggiornaVista(now) {
   }
   B.motT = now;
   aggiornaStrumenti(pub);
+  busFrame(el1, now);
   const ld2 = document.getElementById('bb-ld2');
   attr(ld2, 'fill', pub && pub.ld2 > 5e-5 ? '#7dffad' : '#2d4a33');
   mostraProblemi(now);
@@ -1449,6 +1481,7 @@ function pannelloProprieta() {
   if (c.type === 'buzzer') h += ` <label class="small"><input type="checkbox" data-suono ${B.suono && B.suono.has(c.id) ? 'checked' : ''}> suono</label>`;
   if (c.type === 'button') h += ' <span class="muted small">tieni premuto il tasto nero</span>';
   if (K.STRUMENTI.includes(c.type)) h += ' <button type="button" class="small" data-pannello>Pannello…</button> <span class="muted small">(anche con doppio clic sullo strumento)</span>';
+  if (TIPI_BUS.includes(c.type)) h += busProprieta(c, esc);
   const q = B.ultimo && B.ultimo.res && B.ultimo.res.q.get(c.id);
   if (q && inCorsa()) h += ` <span class="small mono">${['interdizione', 'zona attiva', 'saturazione'][q.r]} · Ic ${(q.ic * 1000).toFixed(1).replace('.', ',')} mA · Ib ${(q.ib * 1000).toFixed(2).replace('.', ',')} mA · Vce ${q.vce.toFixed(2).replace('.', ',')} V</span>`;
   box.innerHTML = h;
@@ -1456,7 +1489,7 @@ function pannelloProprieta() {
     const k = inp.dataset.k;
     let v = inp.value;
     if (k === 'r' || k === 'c') { v = K.leggiValore(v); if (!(v > 0)) { inp.setCustomValidity('valore non valido'); inp.reportValidity(); return; } }
-    else if (k === 'span' || k === 'beta' || k === 'anode') v = +v;
+    else if (k === 'span' || k === 'beta' || k === 'anode' || k === 'addr' || k === 'pullup') v = +v;
     modifica(bb => { const x = bb.comps.find(x => x.id === c.id); if (k === 'label') x.label = v; else x.opt[k] = v; });
   }));
   const sl = box.querySelector('[data-pos]');
@@ -1528,10 +1561,13 @@ const CATEGORIE = [
   ['Transistor', ['npn', 'pnp']],
   ['Ingressi', ['button', 'encoder']],
   ['Uscite', ['buzzer', 'servo', 'motor']],
+  ['Display I2C/SPI', ['lcd16x2', 'oled', 'oledspi']],
+  ['Sensori e memorie', ['lm75', 'mpu6050', 'hcsr04', 'eeprom', 'eeprom256']],
   ['Strumenti', ['dmm', 'scope', 'gen', 'psu']],
 ];
 const NOME_CORTO = { bb830: 'Breadboard 830', bb400: 'Mezza (400)', binari: 'Binari + −', res: 'Resistore', pot: 'Potenziometro', cap: 'Condensatore', jumper: 'Ponticello', led: 'LED', seg7: 'Display 1 cifra', seg7x3: 'Display 3 cifre',
-  diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC', dmm: 'Multimetro', scope: 'Oscilloscopio', gen: 'Generatore', psu: 'Alimentatore' };
+  diode: 'Diodo', npn: 'NPN BC107', pnp: 'PNP BC212', button: 'Pulsante', encoder: 'Encoder KY-040', buzzer: 'Buzzer', servo: 'Servo SG90', motor: 'Motore DC',
+  lcd16x2: 'LCD 16x2 I2C', oled: 'OLED I2C', oledspi: 'OLED SPI', lm75: 'LM75 temperatura', mpu6050: 'MPU6050', hcsr04: 'HC-SR04', eeprom: 'EEPROM 24C02', eeprom256: 'EEPROM 24LC256', dmm: 'Multimetro', scope: 'Oscilloscopio', gen: 'Generatore', psu: 'Alimentatore' };
 function iconaComp(tipo) {
   const c = { id: 'ico', type: tipo, x: 0, y: 0, rot: 0, opt: Object.fromEntries(K.OPZIONI[tipo].map(([k, v]) => [k, v])) };
   return `<svg viewBox="0 0 10 10" data-icona="${tipo}"><g>${compSVG(c)}</g></svg>`;
@@ -1694,4 +1730,4 @@ function postoLibero(tipo) {
   }
   return [0, y0];
 }
-Object.assign(B, { aggiungi, postoLibero, elimina, copia, incolla, annulla, ripeti, adatta, zoom, scegli, sagomaPosa, duplica: () => { copia(); incolla(); }, togliAngolo: () => { if (!B.filo) return; if (B.filo.pts.length > 1) { B.filo.pts.pop(); disegnaFiloInCorso(); } else annullaComando(); }, apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });
+Object.assign(B, { aggiungi, postoLibero, elimina, copia, incolla, annulla, ripeti, adatta, zoom, scegli, sagomaPosa, duplica: () => { copia(); incolla(); }, impostaSensore, BUS, togliAngolo: () => { if (!B.filo) return; if (B.filo.pts.length > 1) { B.filo.pts.pop(); disegnaFiloInCorso(); } else annullaComando(); }, apriPannello, chiudiPannello, tracciaOsc, letturaDMM, lettura: letturaDisplay, premi, scatto, esportaPNG, impostaPot, modifica, K, ruotaSel, percorso, coloreAuto, impostaModo, annullaComando, controllaAggancio, seleziona: ids => { B.sel = new Set(ids); disegnaSelezione(); } });

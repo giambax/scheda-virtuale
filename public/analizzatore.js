@@ -5,6 +5,8 @@
  *   "G µs porta ODR"      subito a ogni HAL_GPIO_WritePin/TogglePin (tempo al µs)
  * Ogni porta ha un buffer circolare di LA_N cambi: la memoria non cresce.
  *   "W porta pin duty f fesatta"  uscita PWM/OC di un timer: l'onda si ricostruisce (laPieces), non si registra
+ *   "O I|S|H …"  transazioni I2C/SPI ed eco dell'HC-SR04 (sim_bus.c, punto L): "raffiche" con i bit ricostruiti
+ *                 al µs (laBurst) sopra i cambi registrati, e i byte decodificati scritti sopra il canale
  * Canali automatici: prima i pin che commutano nei primi LA_AUTO_US, poi le uscite con etichetta, poi gli
  * ingressi EXTI; la scelta a mano resta salvata per progetto (localStorage "sv-la-ch:<id>").
  * Usa S, $, activePins, ARD, keyOf, parseKey di app.js. */
@@ -15,6 +17,7 @@ const LA_AUTO_US = 2e6;        // la scelta automatica si aggiorna nei primi 2 s
 const LA = {
   ring: {}, cur: {}, lastT: 0,
   cnt: {}, pwm: {},                         // cambi per pin (scelta automatica), tratti PWM per pin
+  burst: {}, lab: {}, echo: {},             // raffiche I2C/SPI/eco ed etichette dei byte per pin (punto L)
   ch: Array(LA_CH).fill(''), auto: true, want: null, pinsKey: '',
   paused: false, end: 0, span: 20000,       // finestra in µs
   cur2: [null, null],                       // cursori A e B (µs)
@@ -64,8 +67,97 @@ function laOnW(k, duty, f) {
   segs.push({ t: laNow(), on, d, per });
   if (segs.length > 2000) segs.shift();
 }
+// ------------------------------------------------------------------
+// I2C, SPI, HC-SR04 (punto L): una raffica = intervallo [a, b] di un pin con i fronti calcolati dai pezzi
+// della riga "O" (I2C: S, R, P, byte+ACK; SPI: byte MOSI/MISO), e le etichette dei byte decodificati.
+const LA_BURST = 4000;
+function laAddBurst(k, b) {
+  const arr = LA.burst[k] || (LA.burst[k] = []);
+  arr.push(b);
+  if (arr.length > LA_BURST) arr.shift();
+  LA.cnt[k] = (LA.cnt[k] || 0) + 2;
+  if (b.b > LA.lastT) LA.lastT = b.b;
+}
+function laAddLab(k, a, b, t, err) {
+  const arr = LA.lab[k] || (LA.lab[k] = []);
+  arr.push({ a, b, t, err });
+  if (arr.length > LA_BURST * 4) arr.splice(0, LA_BURST);
+}
+const hx = v => v.toString(16).toUpperCase().padStart(2, '0');
+function laOnO(a) {
+  if (LA.paused) return;
+  if (a[1] === 'I') {                 // O I bus t0 bit scl sda pezzi…
+    const t0 = +a[3], T = +a[4], toks = a.slice(7);
+    let bits = 0, t = t0, primo = true;
+    for (const x of toks) {
+      const n = x.length === 1 ? 1 : 9;
+      if (x === 'S' || x === 'R' || x === 'P') { laAddLab(laK(+a[6]), t, t + T, x === 'R' ? 'Sr' : x, false); primo = x !== 'P'; }
+      else {
+        const v = parseInt(x.slice(0, 2), 16), ack = x[2] === 'A';
+        const testo = primo ? `${hx(v >> 1)} ${v & 1 ? 'R' : 'W'}` : '0x' + hx(v);
+        laAddLab(laK(+a[6]), t, t + 9 * T, testo + (ack ? '' : ' NACK'), !ack && primo);
+        primo = false;
+      }
+      t += n * T; bits += n;
+    }
+    const b = { a: t0, b: t0 + bits * T, i2c: toks, T };
+    laAddBurst(laK(+a[5]), { ...b, ruolo: 'scl' }); laAddBurst(laK(+a[6]), { ...b, ruolo: 'sda' });
+  } else if (a[1] === 'S') {          // O S bus t0 bit sck mosi miso cpol cpha mosi_hex miso_hex
+    const t0 = +a[3], T = +a[4], [sck, mosi, miso, cpol, cpha] = a.slice(5, 10).map(Number), tx = a[10], rx = a[11];
+    const n = Math.max(tx === '-' ? 0 : tx.length / 2, rx === '-' ? 0 : rx.length / 2), b = { a: t0, b: t0 + n * 8 * T, T, cpol, cpha };
+    if (sck >= 0) laAddBurst(laK(sck), { ...b, ruolo: 'sck', n });
+    for (const [pk, h, nome] of [[mosi, tx, 'mosi'], [miso, rx, 'miso']]) {
+      if (pk < 0 || h === '-') continue;
+      laAddBurst(laK(pk), { ...b, ruolo: nome, hex: h });
+      for (let i = 0; i < h.length / 2; i++) laAddLab(laK(pk), t0 + i * 8 * T, t0 + (i + 1) * 8 * T, '0x' + h.substr(2 * i, 2).toUpperCase(), false);
+    }
+  } else if (a[1] === 'H') {          // O H t pin livello: fronte esatto dell'eco (tra due "C" del millisecondo)
+    const t = +a[2], k = laK(+a[3]);
+    if (+a[4]) LA.echo[k] = t;
+    else if (LA.echo[k] !== undefined) {
+      const su = LA.echo[k], a0 = Math.floor(su / 1000) * 1000, b0 = Math.ceil(t / 1000) * 1000;
+      laAddBurst(k, { a: a0, b: b0, fronti: [[a0, 0], [su, 1], [t, 0]] });
+      laAddLab(k, su, t, `${(t - su).toFixed(1).replace('.', ',')} µs`, false);
+      delete LA.echo[k];
+    }
+  }
+}
+const laK = n => keyOf(n >> 4, n & 15);
+// fronti [t, livello] di una raffica (calcolati quando servono, non tenuti in memoria)
+function laBurst(b) {
+  if (b.fronti) return b.fronti;
+  const e = [], T = b.T;
+  if (b.i2c) {
+    let t = b.a, scl = b.i2c[0] === 'S' ? 1 : 0, sda = 1;
+    const set = (tt, c, d) => { if (b.ruolo === 'scl') e.push([tt, c]); else e.push([tt, d]); };
+    set(t, scl, sda);
+    for (const x of b.i2c) {
+      if (x === 'S') { set(t, 1, 0); set(t + T / 2, 0, 0); scl = 0; sda = 0; }
+      else if (x === 'R') { set(t, 0, 1); set(t + T / 4, 1, 1); set(t + T / 2, 1, 0); set(t + 3 * T / 4, 0, 0); scl = 0; sda = 0; }
+      else if (x === 'P') { set(t, 0, 0); set(t + T / 4, 1, 0); set(t + T / 2, 1, 1); scl = 1; sda = 1; }
+      else {
+        const v = parseInt(x.slice(0, 2), 16), ack = x[2] === 'A';
+        for (let i = 0; i < 9; i++) {
+          const d = i < 8 ? (v >> (7 - i)) & 1 : ack ? 0 : 1, tt = t + i * T;
+          set(tt, 0, d); set(tt + T / 4, 1, d); set(tt + 3 * T / 4, 0, d);
+        }
+        sda = ack ? 0 : 1;
+      }
+      t += x.length === 1 ? T : 9 * T;
+    }
+  } else if (b.ruolo === 'sck') {
+    e.push([b.a, b.cpol]);
+    for (let i = 0; i < b.n * 8; i++) { const tt = b.a + i * T + (b.cpha ? 0 : T / 2); e.push([tt, 1 - b.cpol], [tt + T / 2, b.cpol]); }
+  } else {
+    for (let i = 0; i < b.hex.length / 2; i++) {
+      const v = parseInt(b.hex.substr(2 * i, 2), 16);
+      for (let j = 0; j < 8; j++) e.push([b.a + (i * 8 + j) * T, (v >> (7 - j)) & 1]);
+    }
+  }
+  return e;
+}
 function laReset() {
-  Object.assign(LA, { ring: {}, cur: {}, lastT: 0, cnt: {}, pwm: {}, paused: false, end: 0, cur2: [null, null], pinsKey: '' });
+  Object.assign(LA, { ring: {}, cur: {}, lastT: 0, cnt: {}, pwm: {}, burst: {}, lab: {}, echo: {}, paused: false, end: 0, cur2: [null, null], pinsKey: '' });
   LA.trig.at = null; LA.trig.da = laNow();
   LA.want = laLoad();
   LA.auto = !LA.want;
@@ -112,24 +204,46 @@ function laWalk(k, a, b, fn, max = Infinity) {
           if (t0 + hi > x && t0 + hi <= y && !out(t0 + hi, 0)) return false;
         }
       }
-    } else {
-      const r = LA.ring[p];
-      if (r && r.len) {
-        const base = (r.head + LA_N - r.len) % LA_N;
-        let j = laFind(r, x), t1 = x;
-        if (j < 0) { j = 0; t1 = r.t[base]; }
-        if (t1 <= y) {
-          if (!out(t1, (r.v[(base + j) % LA_N] >> pin) & 1)) return false;
-          for (j++; j < r.len; j++) {
-            const i = (base + j) % LA_N;
-            if (r.t[i] > y) break;
-            if (!out(r.t[i], (r.v[i] >> pin) & 1)) return false;
-          }
-        }
-      } else if (!out(x, ((LA.cur[p] ?? 0) >> pin) & 1)) return false;
-    }
+    } else if (!laWalkRaffiche(k, p, pin, x, y, out)) return false;
     x = y; si++;
   }
+  return true;
+}
+
+// cambi registrati del pin tra x e y, con sopra le raffiche I2C/SPI/eco (che hanno la precedenza)
+function laWalkRaffiche(k, p, pin, x, y, out) {
+  const bs = LA.burst[k] || [];
+  let lo = 0, hi = bs.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (bs[m].b <= x) lo = m + 1; else hi = m; }
+  let xx = x;
+  for (let bi = lo; xx < y; bi++) {
+    const b = bs[bi];
+    if (!b || b.a >= y) return laWalkRing(p, pin, xx, y, out);
+    if (b.a > xx) { if (!laWalkRing(p, pin, xx, b.a, out)) return false; xx = b.a; }
+    const e = laBurst(b), fine = Math.min(b.b, y);
+    let j = 0, lv = e.length ? e[0][1] : 1;
+    while (j < e.length && e[j][0] <= xx) lv = e[j++][1];
+    if (!out(xx, lv)) return false;
+    for (; j < e.length && e[j][0] <= fine; j++) if (!out(e[j][0], e[j][1])) return false;
+    xx = Math.max(xx, fine);
+  }
+  return true;
+}
+function laWalkRing(p, pin, x, y, out) {
+  const r = LA.ring[p];
+  if (r && r.len) {
+    const base = (r.head + LA_N - r.len) % LA_N;
+    let j = laFind(r, x), t1 = x;
+    if (j < 0) { j = 0; t1 = r.t[base]; }
+    if (t1 <= y) {
+      if (!out(t1, (r.v[(base + j) % LA_N] >> pin) & 1)) return false;
+      for (j++; j < r.len; j++) {
+        const i = (base + j) % LA_N;
+        if (r.t[i] > y) break;
+        if (!out(r.t[i], (r.v[i] >> pin) & 1)) return false;
+      }
+    }
+  } else if (!out(x, ((LA.cur[p] ?? 0) >> pin) & 1)) return false;
   return true;
 }
 
@@ -275,6 +389,23 @@ function laDraw() {
       ctx.moveTo(LA_L, hi); ctx.lineTo(x(tEnd), hi); ctx.moveTo(LA_L, lo); ctx.lineTo(x(tEnd), lo);
     } else if (lv !== null) ctx.lineTo(x(tEnd), lv ? hi : lo);
     ctx.stroke();
+    // byte decodificati (I2C/SPI) e durata dell'eco, dove c'è spazio
+    const labs = LA.lab[k];
+    if (labs && labs.length) {
+      let lo2 = 0, hi2 = labs.length;
+      while (lo2 < hi2) { const m = (lo2 + hi2) >> 1; if (labs[m].b <= start) lo2 = m + 1; else hi2 = m; }
+      ctx.font = '600 10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center';
+      for (let j = lo2, nd = 0; j < labs.length && labs[j].a < tEnd && nd < 300; j++) {
+        const L = labs[j], xa = Math.max(LA_L, x(L.a)), xb = Math.min(x(Math.min(L.b, tEnd)), W - LA_R), w = xb - xa;
+        if (w < ctx.measureText(L.t).width + 6) continue;
+        nd++;
+        ctx.fillStyle = L.err ? '#e5484d33' : color + '30';
+        ctx.fillRect(xa + 1, y0 + rowH / 2 - 7, w - 2, 14);
+        ctx.fillStyle = L.err ? (col('--err') || '#e5484d') : col('--text');
+        ctx.fillText(L.t, (xa + xb) / 2, y0 + rowH / 2 + 3.5);
+      }
+      ctx.textAlign = 'start';
+    }
     ctx.strokeStyle = col('--border');
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, y0 + rowH - .5); ctx.lineTo(W, y0 + rowH - .5); ctx.stroke();

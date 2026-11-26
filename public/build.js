@@ -3,7 +3,7 @@
 // Stessa logica di build() in scheda-virtuale/server.js, ma con clang in
 // WebAssembly (YoWASP) e un file system virtuale in memoria.
 
-import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-25m';
+import { strumenta, PROLOGO } from './strumenta.js?v=2026-11-26a';
 
 // Memoria lineare del WebAssembly (wasm-ld con --stack-first):
 //   0x000000–0x700000  stack (se trabocca si esce sotto lo 0 → errore, come un HardFault)
@@ -274,6 +274,7 @@ export async function buildProject(files, sim, hal, cc, log = () => {}, opz = {}
   fingerprint += text(P['Core/Inc/stm32f4xx_hal_conf.h']);
   put(tree.sim, 'sim_hal.c', sim['sim_hal.c']);
   put(tree.sim, 'sim_pre.h', sim['sim_pre.h']);
+  put(tree.sim, 'sim_bus.c', sim['sim_bus.c'] || '');
 
   let cp = { defs: ['USE_HAL_DRIVER'], incs: [], entries: ['Core'] };
   if (P['.cproject']) try { cp = parseCproject(text(P['.cproject'])); } catch {}
@@ -338,7 +339,7 @@ export async function buildProject(files, sim, hal, cc, log = () => {}, opz = {}
   if (failed.length) return { ok: false, errors: parseDiagnostics(out), log: out, notes, T };
 
   // HAL simulata: dipende solo da header e simboli → riusata se non cambiano
-  const key = await hash(fingerprint + defs.join(' ') + ugNoUif + (debug ? 'dbg' : '') + sim['sim_hal.c'] + sim['sim_pre.h']);
+  const key = await hash(fingerprint + defs.join(' ') + ugNoUif + (debug ? 'dbg' : '') + sim['sim_hal.c'] + (sim['sim_bus.c'] || '') + sim['sim_pre.h']);
   T.halStart = Date.now();
   let halObj = simHalCache.get(key);
   T.halCached = !!halObj;

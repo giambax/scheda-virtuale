@@ -9,9 +9,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#151920">
 <link rel="apple-touch-icon" href="icone/icona-180.png">
-<link rel="stylesheet" href="style.css?v=2026-11-25m">
-<link rel="stylesheet" href="web.css?v=2026-11-25m">
-<link rel="stylesheet" href="mobile.css?v=2026-11-25m">
+<link rel="stylesheet" href="style.css?v=2026-11-26a">
+<link rel="stylesheet" href="web.css?v=2026-11-26a">
+<link rel="stylesheet" href="mobile.css?v=2026-11-26a">
 <script>
 /* Service worker: tiene il sito in cache (funziona anche senza Internet) e aggiunge le
  * intestazioni COOP/COEP che servono alla simulazione (SharedArrayBuffer). La prima
@@ -90,6 +90,7 @@ if ('serviceWorker' in navigator) {
     <div id="sync-stato" class="sync-stato small" hidden title="Clic: sincronizza adesso"></div>
     <div class="carica">
       <button id="btn-nuovo" class="ghost small" title="Progetto vuoto per la NUCLEO-F401RE (LD2, B1, USART2 già configurati)">＋ Nuovo</button>
+      <select id="sel-esempio" class="small" title="Progetti pronti con codice e circuito: display, sensori, memorie"><option value="">＋ Da esempio…</option></select>
       <label class="btnlike" title="La cartella di un progetto CubeIDE (quella con il file .ioc), o un intero workspace">📁 Cartella<input id="in-cartella" type="file" webkitdirectory hidden></label>
       <label class="btnlike" title="Uno zip del progetto (anche fatto su Windows), o uno zip esportato da qui">🗜 Zip<input id="in-zip" type="file" accept=".zip,application/zip" hidden></label>
       <button id="btn-esporta" class="ghost small" title="Scarica tutti i tuoi progetti in uno zip, da caricare su un altro computer">⬇ Tutti</button>
@@ -217,6 +218,7 @@ if ('serviceWorker' in navigator) {
     <p>Il tuo progetto CubeIDE viene compilato <b>qui nella pagina</b> (clang in WebAssembly) con una HAL simulata: GPIO, interrupt EXTI, timer (anche PWM), UART, ADC, SysTick e priorità NVIC. Nessun server: i progetti restano in questo browser, sotto il tuo nome utente.</p>
     <ol>
       <li><b>＋ Nuovo</b> crea un progetto vuoto per la NUCLEO-F401RE (LD2, B1 e seriale già pronti): scrivi il codice tra <code>USER CODE BEGIN</code> e <code>END</code>.</li>
+      <li><b>＋ Da esempio…</b> crea un progetto pronto con un display o un sensore I2C/SPI già collegato sulla breadboard (LCD 16x2, OLED, LM75, MPU6050, EEPROM, HC-SR04).</li>
       <li><b>📁 Cartella</b>: la cartella del progetto CubeIDE (quella con il file <code>.ioc</code>) o un intero workspace (scegli tu quali progetti). <b>🗜 Zip</b>: uno zip del progetto, anche fatto su Windows. Bastano anche solo i file <code>.c</code>/<code>.h</code> con il <code>.ioc</code>: gli header della HAL li mette il sito.</li>
       <li>Premi <b>▶ Avvia</b>. La prima volta si scarica il compilatore (poi resta in cache e funziona anche senza Internet).</li>
       <li>Nel <b>Codice</b> modifichi i file (più file aperti a schede, 🔍 o <kbd>Ctrl/⌘+F</kbd> per cercare) e con <b>Salva e avvia</b> o <kbd>Ctrl/⌘+S</kbd> ricompili. Gli errori sono sottolineati in rosso: clicca l'errore in alto per andare alla riga.</li>
@@ -375,6 +377,6 @@ if ('serviceWorker' in navigator) {
   </form>
 </dialog>
 
-<script type="module" src="local-server.js?v=2026-11-25m"></script>
+<script type="module" src="local-server.js?v=2026-11-26a"></script>
 </body>
 </html>

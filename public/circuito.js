@@ -122,6 +122,15 @@ export const TIPI = {
   encoder: { nome: 'Encoder KY-040', pref: 'ENC' },
   servo: { nome: 'Servo SG90', pref: 'M' },
   motor: { nome: 'Motore DC', pref: 'M' },
+  // dispositivi I2C/SPI e sensori (fase 3, punto L): la parte logica la simula sim/sim_bus.c, qui solo piedini e opzioni
+  lcd16x2: { nome: 'Display LCD 16x2 I2C (PCF8574)', pref: 'LCD' },
+  oled: { nome: 'Display OLED 128x64 I2C (SSD1306)', pref: 'OLED' },
+  oledspi: { nome: 'Display OLED 128x64 SPI (SSD1306)', pref: 'OLED' },
+  lm75: { nome: 'Sensore di temperatura LM75 (I2C)', pref: 'U' },
+  mpu6050: { nome: 'Accelerometro MPU6050 (GY-521, I2C)', pref: 'U' },
+  eeprom: { nome: 'EEPROM 24C02 (256 byte, I2C)', pref: 'U' },
+  eeprom256: { nome: 'EEPROM 24LC256 (32 KB, I2C)', pref: 'U' },
+  hcsr04: { nome: 'Sensore a ultrasuoni HC-SR04', pref: 'U' },
   // strumenti (tappa B, come in Multisim): si mettono sul banco e si collegano con i fili
   dmm: { nome: 'Multimetro', pref: 'XMM' },
   scope: { nome: 'Oscilloscopio', pref: 'XSC' },
@@ -147,6 +156,14 @@ export const OPZIONI = {
   encoder: [],
   servo: [],
   motor: [],
+  lcd16x2: [['addr', 0x27, [0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F]], ['pullup', 1, [0, 1]]],
+  oled: [['addr', 0x3C, [0x3C, 0x3D]], ['pullup', 1, [0, 1]]],
+  oledspi: [],
+  lm75: [['addr', 0x48, [0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F]], ['pullup', 0, [0, 1]], ['t', 25, -55, 125]],
+  mpu6050: [['addr', 0x68, [0x68, 0x69]], ['pullup', 1, [0, 1]], ['roll', 0, -180, 180], ['pitch', 0, -90, 90]],
+  eeprom: [['addr', 0x50, [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]], ['pullup', 1, [0, 1]]],
+  eeprom256: [['addr', 0x50, [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57]], ['pullup', 1, [0, 1]]],
+  hcsr04: [['dist', 200, 20, 4500]],
   dmm: [['modo', 'V', ['V', 'A', 'Ω']], ['ac', 0, [0, 1]]],
   scope: [['va', 1, [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]], ['vb', 1, [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]],
     ['sdiv', 0.001, [1e-5, 2e-5, 5e-5, 1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5]],
@@ -178,6 +195,13 @@ export function piedini(c) {
     case 'pot': return [['1', 0, 0], ['W', 2, 0], ['3', 4, 0]];
     case 'encoder': return [['CLK', 0, 0], ['DT', 1, 0], ['SW', 2, 0], ['+', 3, 0], ['GND', 4, 0]];
     case 'servo': return [['GND', 0, 0], ['+', 1, 0], ['S', 2, 0]];
+    case 'lcd16x2': return [['GND', 0, 0], ['VCC', 0, 1], ['SDA', 0, 2], ['SCL', 0, 3]];     // piedini del modulo, sul lato sinistro
+    case 'oled': return [['GND', 0, 0], ['VCC', 1, 0], ['SCL', 2, 0], ['SDA', 3, 0]];
+    case 'oledspi': return [['GND', 0, 0], ['VCC', 1, 0], ['D0', 2, 0], ['D1', 3, 0], ['RES', 4, 0], ['DC', 5, 0], ['CS', 6, 0]];
+    case 'lm75': return [['VCC', 0, 0], ['GND', 1, 0], ['SDA', 2, 0], ['SCL', 3, 0]];
+    case 'mpu6050': return [['VCC', 0, 0], ['GND', 1, 0], ['SCL', 2, 0], ['SDA', 3, 0]];
+    case 'eeprom': case 'eeprom256': return [['VCC', 0, 0], ['GND', 1, 0], ['SDA', 2, 0], ['SCL', 3, 0]];
+    case 'hcsr04': return [['VCC', 0, 0], ['Trig', 1, 0], ['Echo', 2, 0], ['GND', 3, 0]];
     case 'dmm': return [['COM', 0, 0], ['V', 3, 0], ['A', 6, 0]];
     case 'scope': return [['A', 0, 0], ['B', 4, 0], ['GND', 8, 0]];
     case 'gen': return [['+', 0, 0], ['COM', 3, 0]];
@@ -230,8 +254,10 @@ export function pulisciBreadboard(d) {
       else opt[k] = num(v, a, b, def);
     }
     if (opt.span !== undefined) opt.span = Math.round(opt.span);
-    out.comps.push({ id: id(c.id, 'c'), type: c.type, x: coord(c.x), y: coord(c.y), rot: Math.round(num(c.rot, 0, 3, 0)), opt,
-      label: String(c.label ?? '').replace(/[^\w\-+.,µΩ ]/g, '').slice(0, 12) });
+    const nc = { id: id(c.id, 'c'), type: c.type, x: coord(c.x), y: coord(c.y), rot: Math.round(num(c.rot, 0, 3, 0)), opt,
+      label: String(c.label ?? '').replace(/[^\w\-+.,µΩ ]/g, '').slice(0, 12) };
+    if (EEPROM[c.type]) { const m = pulisciMem(c.mem, EEPROM[c.type]); if (m.length) nc.mem = m; }
+    out.comps.push(nc);
   }
   if (d.v !== 2 && !out.comps.some(c => c.id === TAVOLA0.id)) out.comps.unshift({ ...TAVOLA0, opt: {} });
   for (const w of Array.isArray(d.wires) ? d.wires.slice(0, MAX_FILI) : []) {
@@ -264,6 +290,34 @@ export function pulisciBreadboard(d) {
     if (Object.keys(sf).length) out.schemaFili = sf;
   }
   if (d.schemaColori) out.schemaColori = 1;     // fili dello schema con i colori della breadboard
+  return out;
+}
+// Contenuto delle EEPROM (punto L): resta nel progetto come tratti [indirizzo, "esadecimale"] dei byte diversi da 0xFF
+export const EEPROM = { eeprom: 256, eeprom256: 32768 };
+export function pulisciMem(m, dim) {
+  const out = [];
+  let tot = 0;
+  for (const t of Array.isArray(m) ? m.slice(0, 4096) : []) {
+    if (!Array.isArray(t) || typeof t[1] !== 'string' || !/^([0-9a-f]{2})+$/.test(t[1])) continue;
+    const a = Math.round(num(t[0], 0, dim - 1, 0)), n = Math.min(t[1].length / 2, dim - a);
+    if ((tot += n) > dim) break;
+    out.push([a, t[1].slice(0, 2 * n)]);
+  }
+  return out;
+}
+// scrive n byte (esadecimale) da a nei tratti, unendo e togliendo i 0xFF
+export function scriviMem(m, dim, a, hex) {
+  const b = new Uint8Array(dim).fill(0xff);
+  for (const [x, h] of m || []) for (let i = 0; i < h.length / 2; i++) b[x + i] = parseInt(h.substr(2 * i, 2), 16);
+  for (let i = 0; i < hex.length / 2 && a + i < dim; i++) b[a + i] = parseInt(hex.substr(2 * i, 2), 16);
+  const out = [];
+  for (let i = 0; i < dim; i++) {
+    if (b[i] === 0xff) continue;
+    let ult = i, j = i;
+    while (j < dim && j - ult < 4) { if (b[j] !== 0xff) ult = j; j++; }   // un tratto finisce dopo 4 byte 0xFF di fila
+    out.push([i, [...b.subarray(i, ult + 1)].map(x => x.toString(16).padStart(2, '0')).join('')]);
+    i = ult;
+  }
   return out;
 }
 // "4k7" → 4700, "1,5k" → 1500, "100n" → 1e-7, "2M2" → 2.2e6
@@ -342,6 +396,15 @@ export function elementi(net) {
       case 'diode': add({ k: 'D', n: [N('A'), N('K')], vth: MOD.VD, rd: MOD.RD }); break;
       case 'cap': add({ k: 'C', n: [N('1'), N('2')], c: o.c }); break;
       case 'button': add({ k: 'SW', n: [N('1'), N('2')], sw: 'p' }); break;
+      // dispositivi I2C/SPI e sensori (punto L): assorbimento tra VCC e GND, pull-up del modulo (4,7 kΩ verso VCC),
+      // Echo dell'HC-SR04 basso a riposo; la parte digitale la fa sim/sim_bus.c
+      case 'lcd16x2': case 'oled': case 'oledspi': case 'lm75': case 'mpu6050': case 'eeprom': case 'eeprom256': case 'hcsr04': {
+        const vcc = N('VCC'), gnd = N('GND');
+        add({ k: 'R', n: [vcc, gnd], r: { lcd16x2: 200, oled: 330, oledspi: 330, lm75: 1e5, mpu6050: 1000, eeprom: 1e5, eeprom256: 1e5, hcsr04: 330 }[c.type] });
+        if (o.pullup) for (const f of ['SDA', 'SCL']) add({ k: 'R', n: [N(f), vcc], r: 4700 });
+        if (c.type === 'hcsr04') add({ k: 'R', n: [N('Echo'), gnd], r: 100 });
+        break;
+      }
       case 'buzzer': add({ k: 'R', n: [N('+'), N('-')], r: 120, buzz: true }); break;
       case 'motor': add({ k: 'R', n: [N('1'), N('2')], r: 15, motor: true }); break;
       case 'npn': case 'pnp': add({ k: 'Q', n: [N('E'), N('B'), N('C')], s: c.type === 'npn' ? 1 : -1, beta: o.beta }); break;

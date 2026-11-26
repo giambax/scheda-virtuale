@@ -224,7 +224,16 @@ void __sim_stub(const char *name)
   X(DMA2_Stream4_IRQn, DMA2_Stream4_IRQHandler, "DMA2_Stream4") \
   X(DMA2_Stream5_IRQn, DMA2_Stream5_IRQHandler, "DMA2_Stream5") \
   X(DMA2_Stream6_IRQn, DMA2_Stream6_IRQHandler, "DMA2_Stream6") \
-  X(DMA2_Stream7_IRQn, DMA2_Stream7_IRQHandler, "DMA2_Stream7")
+  X(DMA2_Stream7_IRQn, DMA2_Stream7_IRQHandler, "DMA2_Stream7") \
+  X(I2C1_EV_IRQn, I2C1_EV_IRQHandler, "I2C1_EV") \
+  X(I2C1_ER_IRQn, I2C1_ER_IRQHandler, "I2C1_ER") \
+  X(I2C2_EV_IRQn, I2C2_EV_IRQHandler, "I2C2_EV") \
+  X(I2C2_ER_IRQn, I2C2_ER_IRQHandler, "I2C2_ER") \
+  X(I2C3_EV_IRQn, I2C3_EV_IRQHandler, "I2C3_EV") \
+  X(I2C3_ER_IRQn, I2C3_ER_IRQHandler, "I2C3_ER") \
+  X(SPI1_IRQn, SPI1_IRQHandler, "SPI1") \
+  X(SPI2_IRQn, SPI2_IRQHandler, "SPI2") \
+  X(SPI3_IRQn, SPI3_IRQHandler, "SPI3")
 
 #define X_WEAK(n, h, s) __attribute__((weak)) void h(void) {}
 IRQ_LIST(X_WEAK)
@@ -358,6 +367,9 @@ void SystemCoreClockUpdate(void) { SystemCoreClock = clk_hclk(); }
 /* Tempo: il codice "spende" cicli; quando finisce il millisecondo      */
 /* si esegue il passo di simulazione (periferiche + interrupt).          */
 static void sim_step(void);
+static int tfine_any, echo_any;         /* timer che contano al µs, eco dell'HC-SR04 in arrivo (sim_bus.c) */
+static uint64_t fine_acc, fine_step = 1; /* bus_fine ogni fine_step cicli (un conteggio del timer più veloce, o 1 µs) */
+static void bus_fine(void);
 
 static void main_wait_tick(void)
 {
@@ -376,6 +388,7 @@ static void charge(uint64_t cyc)
     isr_cyc += cyc;
     uint64_t cpm = cycles_per_ms();
     while (isr_cyc >= cpm) { isr_cyc -= cpm; sim_step(); }
+    if ((tfine_any | echo_any) && (fine_acc += cyc) >= fine_step) { fine_acc = 0; bus_fine(); }
     return;
   }
   uint64_t now = atomic_load(&sim_ms);
@@ -387,6 +400,7 @@ static void charge(uint64_t cyc)
     main_wait_tick();
     main_cyc = rest;
   }
+  if ((tfine_any | echo_any) && (fine_acc += cyc) >= fine_step) { fine_acc = 0; bus_fine(); }
 }
 
 static void wait_one_ms(void)
@@ -740,6 +754,8 @@ static void devs_parse(const char *line)
   pthread_mutex_unlock(&devs_mx);
 }
 
+static int bus_h;                        /* c'è un HC-SR04 (sim_bus.c) */
+static void bus_gpio(void);
 void HAL_GPIO_Init(GPIO_TypeDef *GPIOx, GPIO_InitTypeDef *GPIO_Init)
 {
   int p = port_index(GPIOx);
@@ -824,8 +840,9 @@ void HAL_GPIO_WritePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState Pin
   if (n == o) return;                   /* percorso veloce: niente cambia (il caso di gran lunga più comune) */
   GPIOx->ODR = n;
   gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, n ^ o);
+  if (bus_h) bus_gpio();
 }
-void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { charge(GPIO_CYC); GPIOx->ODR ^= GPIO_Pin; gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, GPIO_Pin); }
+void HAL_GPIO_TogglePin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { charge(GPIO_CYC); GPIOx->ODR ^= GPIO_Pin; gpio_fine_emit(GPIOx); dev_gpio_changed(GPIOx, GPIO_Pin); if (bus_h) bus_gpio(); }
 HAL_StatusTypeDef HAL_GPIO_LockPin(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin) { (void)GPIOx; (void)GPIO_Pin; return HAL_OK; }
 
 __weak void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) { (void)GPIO_Pin; }
@@ -1710,6 +1727,9 @@ static void adc_step(void)
 static void adc_step(void) {}
 #endif
 
+/* I2C, SPI, dispositivi sul bus, timer al µs e input capture (punto L) */
+#include "sim_bus.c"
+
 /* ------------------------------------------------------------------ */
 /* Core HAL, NVIC, SysTick, RCC                                        */
 __weak void HAL_MspInit(void) {}
@@ -1983,6 +2003,7 @@ static void update_pins(int detect_edges)
     uint16_t L = 0, analog = 0;
     for (int pin = 0; pin < 16; pin++) {
       int m = (moder >> (2 * pin)) & 3, pu = (pupdr >> (2 * pin)) & 3, e = ext_in[p][pin], v = 0;
+      if ((bus_in_mask[p] >> pin) & 1) { int bi = bus_in(p, pin); if (bi >= 0) e = bi; }
       int duty = -1; double freq = 0;
       if (m == 1) {
         v = (odr >> pin) & 1;
@@ -1992,7 +2013,7 @@ static void update_pins(int detect_edges)
       } else if (m == 2) {
         uint32_t af = (g->AFR[pin >> 3] >> ((pin & 7) * 4)) & 0xFu;
         if (tim_input_pin(p, pin, af)) v = e >= 0 ? e : pu == 1 ? 1 : pu == 2 ? 0 : (board_pullup[p] >> pin) & 1;
-        else if (!pin_timer_output(p, pin, af, &v, &duty, &freq)) v = (af == 7 || af == 8) ? 1 : 0;
+        else if (!pin_timer_output(p, pin, af, &v, &duty, &freq)) v = (af == 7 || af == 8 || af == 4 || af == 9) ? 1 : 0;   /* UART TX e I2C a riposo: alti */
       } else analog |= (uint16_t)(1u << pin);
       if (v) L |= (uint16_t)(1u << pin);
       int f = (int)lround(freq);
@@ -2110,8 +2131,9 @@ static void sim_step(void)
   update_pins(1);
   deliver();
   systick_step();
-  for (int i = 0; i < NTIM; i++) tim_step(&tims[i]);
+  for (int i = 0; i < NTIM; i++) { tim_fine_pre(&tims[i]); tim_step(&tims[i]); tim_fine_post(&tims[i]); }
   uart_step_all();
+  bus_step();
   adc_step();
   deliver();
   update_pins(1);
@@ -2225,6 +2247,7 @@ static void sim_init(void)
   init_tim(7, TIM11, "TIM11", 1, 0, 18, 3, TIM1_TRG_COM_TIM11_IRQn, TIM1_TRG_COM_TIM11_IRQn);
 
   uart_init_all();
+  bus_init();
   USART1->SR = USART2->SR = USART6->SR = USART_SR_TXE | USART_SR_TC;
 }
 
@@ -2264,6 +2287,8 @@ static void handle_line(char *line)
     if (sscanf(line + 1, "%d %d %d %d", &d, &p, &pin, &v) == 4) sched_push(d, p, pin, v);
   } else if (line[0] == 'D') {
     devs_parse(line);
+  } else if (line[0] == 'E') {
+    bus_cmd(line);
   } else if (line[0] == 'K') {
     int i; unsigned m;
     if (sscanf(line + 1, "%d %x", &i, &m) == 2 && i >= 0 && i < NDEV) key_mask[i] = (uint16_t)m;

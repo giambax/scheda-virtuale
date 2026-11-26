@@ -52,6 +52,13 @@ function simbolo(c) {
     case 'motor': return { pins: [['1', -2, 0], ['2', 2, 0]], svg: L(-2 * U, 0, -9, 0) + L(9, 0, 2 * U, 0) + `<circle r="9" fill="var(--sch-fondo)" stroke="currentColor" stroke-width="1.6"/>` + T(0, 3.5, 'M', 'middle', 10) };
     case 'servo': return scatola(5, 6, 'SERVO', [['GND', 'GND'], ['+', '+'], ['S', 'S']], []);
     case 'encoder': return scatola(5, 10, 'KY-040', [['CLK', 'CLK'], ['DT', 'DT'], ['SW', 'SW'], ['+', '+'], ['GND', 'GND']], []);
+    // dispositivi I2C/SPI e sensori (punto L): blocchi con i piedini del modulo, l'indirizzo I2C nel nome
+    case 'lcd16x2': case 'oled': case 'lm75': case 'mpu6050': case 'eeprom': case 'eeprom256': {
+      const nome = { lcd16x2: 'LCD 16x2', oled: 'SSD1306', lm75: 'LM75', mpu6050: 'MPU6050', eeprom: '24C02', eeprom256: '24LC256' }[c.type];
+      return scatola(6, 8, `${nome} 0x${(o.addr || 0).toString(16).toUpperCase()}`, [['VCC', 'VCC'], ['GND', 'GND']], [['SDA', 'SDA'], ['SCL', 'SCL']]);
+    }
+    case 'oledspi': return scatola(6, 14, 'SSD1306 SPI', [['VCC', 'VCC'], ['GND', 'GND']], [['D0', 'SCK'], ['D1', 'MOSI'], ['CS', 'CS'], ['DC', 'DC'], ['RES', 'RES']]);
+    case 'hcsr04': return scatola(6, 8, 'HC-SR04', [['VCC', 'VCC'], ['GND', 'GND']], [['Trig', 'TRIG'], ['Echo', 'ECHO']]);
     case 'seg7': return scatola(6, 18, `${o.anode == 1 ? 'AC' : 'CC'} 5161`, K.SEGS.map(s => [s, s.toUpperCase()]), [['com', o.anode == 1 ? 'COM+' : 'COM−']]);
     case 'seg7x3': return scatola(6, 18, `${o.anode == 1 ? 'AC' : 'CC'} 5361`, K.SEGS.map(s => [s, s.toUpperCase()]), [['d1', 'DIG1'], ['d2', 'DIG2'], ['d3', 'DIG3']]);
     case 'dmm': return { pins: [['V', -2, 0], ['COM', 2, 0], ...(o.modo === 'A' ? [['A', 0, -2]] : [])], svg: L(-2 * U, 0, -10, 0) + L(10, 0, 2 * U, 0) + `<circle r="10" fill="var(--sch-fondo)" stroke="currentColor" stroke-width="1.6"/>` + T(0, 4, o.modo === 'Ω' ? 'Ω' : o.modo, 'middle', 11) + (o.modo === 'A' ? L(0, -2 * U, 0, -10) : '') };

@@ -204,6 +204,21 @@ $('#btn-nuovo').addEventListener('click', async () => {
   await afterImport([nome]);
   showTab('code');
 });
+// progetti d'esempio (public/esempi, strumenti/crea-esempi.py): codice + circuito già collegato
+fetch('esempi/elenco.json?v=2026-11-26a').then(r => r.json()).then(el => {
+  const sel = $('#sel-esempio');
+  for (const e of el) { const o = document.createElement('option'); o.value = e.id; o.textContent = e.nome; o.title = e.descr; sel.append(o); }
+}).catch(() => {});
+$('#sel-esempio').addEventListener('change', async e => {
+  const id = e.target.value;
+  e.target.value = '';
+  if (!id) return;
+  try {
+    const nome = await SV.newProject(null, id);
+    await afterImport([nome]);
+    showTab('code');
+  } catch (err) { alert('Esempio non caricato: ' + (err.message || err)); }
+});
 $('#btn-rinomina').addEventListener('click', async () => {
   const n = (prompt('Nuovo nome del progetto:', S.selId) || '').trim();
   if (!n || n === S.selId) return;

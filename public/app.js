@@ -364,6 +364,8 @@ function onSimLine(line) {
     case 'Y': if (window.dbgOnY) dbgOnY(line); break;
     case 'B': devOnB(a); break;
     case 'J': devOnJ(a); break;
+    case 'F': if (window.bbOnF) bbOnF(line); break;
+    case 'O': if (window.laOnO) laOnO(a); break;
   }
 }
 function hexToStr(h) {

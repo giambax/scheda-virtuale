@@ -6,8 +6,8 @@
 // si mandano agli ingressi della scheda i livelli letti sui nodi ("I porta pin livello").
 // Usa S, $, esc, cmd, addLog, pinInfo, parseKey, ADC_PIN di app.js, SEG_SHAPE/SEG_DIGIT/buzzSet di devices.js,
 // SV di local-server.js. Il circuito si salva nel progetto come file ".breadboard.json".
-import * as K from './circuito.js?v=2026-11-26a';
-import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26a';
+import * as K from './circuito.js?v=2026-11-26b';
+import { TIPI_BUS, SENSORI, BUS, configBus, valori, onF, busSVG, busFrame, busProprieta, busPannello } from './bus.js?v=2026-11-26b';
 
 const P = 10;                       // pixel SVG per passo (0,1")
 const NS = 'http://www.w3.org/2000/svg';

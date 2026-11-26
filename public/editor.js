@@ -42,7 +42,26 @@ const rigaCorrente = CM.StateField.define({
 });
 function ridisegnaDbg() { view.dispatch({ effects: aggiornaDbg.of(null) }); }
 
-const dark = () => matchMedia('(prefers-color-scheme: dark)').matches || document.documentElement.dataset.theme === 'dark';
+// tema dell'editor: segue quello del sito (data-theme, scelto nel cassetto), anche quando cambia mentre si scrive.
+// I colori di fondo, numeri di riga e selezione vengono dai token del sito (style.css, punto P); i colori della
+// sintassi da oneDark (scuro) o dallo stile di base (chiaro).
+const dark = () => document.documentElement.dataset.theme !== 'light';
+const temaCM = new CM.Compartment();
+const fondoCM = CM.EditorView.theme({
+  '&': { backgroundColor: 'var(--code-bg)', color: 'var(--text)' },
+  '.cm-gutters': { backgroundColor: 'var(--code-bg)', color: 'var(--muted)', borderRight: '1px solid var(--border)' },
+  '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 7%, transparent)' },
+  '.cm-activeLineGutter': { backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)' },
+  '.cm-cursor': { borderLeftColor: 'var(--accent)' },
+  '.cm-panels': { backgroundColor: 'var(--panel-2)', color: 'var(--text)' },
+});
+const estTema = () => [dark() ? CM.oneDark : CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }), fondoCM];
+new MutationObserver(() => {
+  const eff = { effects: temaCM.reconfigure(estTema()) };
+  view.dispatch(eff);
+  for (const [rel, st] of E.states) if (rel !== E.cur) E.states.set(rel, st.update(eff).state);
+}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 // ro: file in sola lettura (dato da un esercizio)
 function extensions(ro) {
@@ -52,7 +71,7 @@ function extensions(ro) {
     CM.drawSelection(), CM.dropCursor(), CM.indentOnInput(), CM.bracketMatching(), CM.closeBrackets(),
     CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightActiveLine(), CM.highlightSelectionMatches(),
     CM.cpp(), CM.lintGutter(),
-    dark() ? CM.oneDark : CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
+    temaCM.of(estTema()),
     CM.keymap.of([
       ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap, CM.indentWithTab,
     ]),

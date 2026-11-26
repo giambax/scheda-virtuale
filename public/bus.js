@@ -6,7 +6,7 @@
 //  - le EEPROM salvano nel progetto i byte scritti ("F i w ind hex");
 //  - il pannello (doppio clic) dei sensori ha i cursori per cambiare le grandezze mentre il programma gira.
 // Lo usa breadboard.js (import). Niente HTML dai dati: i testi del display vanno in textContent.
-import * as K from './circuito.js?v=2026-11-26a';
+import * as K from './circuito.js?v=2026-11-26b';
 
 export const TIPI_BUS = ['lcd16x2', 'oled', 'oledspi', 'lm75', 'mpu6050', 'eeprom', 'eeprom256', 'hcsr04'];
 export const SENSORI = ['lm75', 'mpu6050', 'hcsr04', 'eeprom', 'eeprom256'];

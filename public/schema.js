@@ -27,7 +27,7 @@ const scatola = (w, h, nome, sx, dx, passo = 2) => {   // blocco con piedini a s
   const y = i => i * passo + 1;
   sx.forEach(([f, t], i) => { s += L(-w / 2 * U - U, y(i) * U, -w / 2 * U, y(i) * U) + T(-w / 2 * U + 3, y(i) * U + 2.5, t, 'start'); });
   dx.forEach(([f, t], i) => { s += L(w / 2 * U, y(i) * U, w / 2 * U + U, y(i) * U) + T(w / 2 * U - 3, y(i) * U + 2.5, t, 'end'); });
-  return { pins: [...sx.map(([f], i) => [f, -w / 2 - 1, y(i)]), ...dx.map(([f], i) => [f, w / 2 + 1, y(i)])], svg: s };
+  return { pins: [...sx.map(([f], i) => [f, -w / 2 - 1, y(i)]), ...dx.map(([f], i) => [f, w / 2 + 1, y(i)])], svg: s, scritte: true };
 };
 function simbolo(c) {
   const o = c.opt || {};
@@ -55,10 +55,10 @@ function simbolo(c) {
     // dispositivi I2C/SPI e sensori (punto L): blocchi con i piedini del modulo, l'indirizzo I2C nel nome
     case 'lcd16x2': case 'oled': case 'lm75': case 'mpu6050': case 'eeprom': case 'eeprom256': {
       const nome = { lcd16x2: 'LCD 16x2', oled: 'SSD1306', lm75: 'LM75', mpu6050: 'MPU6050', eeprom: '24C02', eeprom256: '24LC256' }[c.type];
-      return scatola(6, 8, `${nome} 0x${(o.addr || 0).toString(16).toUpperCase()}`, [['VCC', 'VCC'], ['GND', 'GND']], [['SDA', 'SDA'], ['SCL', 'SCL']]);
+      return scatola(6, 8, `${nome} 0x${(o.addr || 0).toString(16).toUpperCase()}`, [['SDA', 'SDA'], ['SCL', 'SCL']], [['VCC', 'VCC'], ['GND', 'GND']]);
     }
-    case 'oledspi': return scatola(6, 14, 'SSD1306 SPI', [['VCC', 'VCC'], ['GND', 'GND']], [['D0', 'SCK'], ['D1', 'MOSI'], ['CS', 'CS'], ['DC', 'DC'], ['RES', 'RES']]);
-    case 'hcsr04': return scatola(6, 8, 'HC-SR04', [['VCC', 'VCC'], ['GND', 'GND']], [['Trig', 'TRIG'], ['Echo', 'ECHO']]);
+    case 'oledspi': return scatola(6, 14, 'SSD1306 SPI', [['D0', 'SCK'], ['D1', 'MOSI'], ['CS', 'CS'], ['DC', 'DC'], ['RES', 'RES']], [['VCC', 'VCC'], ['GND', 'GND']]);
+    case 'hcsr04': return scatola(6, 8, 'HC-SR04', [['Trig', 'TRIG'], ['Echo', 'ECHO']], [['VCC', 'VCC'], ['GND', 'GND']]);
     case 'seg7': return scatola(6, 18, `${o.anode == 1 ? 'AC' : 'CC'} 5161`, K.SEGS.map(s => [s, s.toUpperCase()]), [['com', o.anode == 1 ? 'COM+' : 'COM−']]);
     case 'seg7x3': return scatola(6, 18, `${o.anode == 1 ? 'AC' : 'CC'} 5361`, K.SEGS.map(s => [s, s.toUpperCase()]), [['d1', 'DIG1'], ['d2', 'DIG2'], ['d3', 'DIG3']]);
     case 'dmm': return { pins: [['V', -2, 0], ['COM', 2, 0], ...(o.modo === 'A' ? [['A', 0, -2]] : [])], svg: L(-2 * U, 0, -10, 0) + L(10, 0, 2 * U, 0) + `<circle r="10" fill="var(--sch-fondo)" stroke="currentColor" stroke-width="1.6"/>` + T(0, 4, o.modo === 'Ω' ? 'Ω' : o.modo, 'middle', 11) + (o.modo === 'A' ? L(0, -2 * U, 0, -10) : '') };
@@ -112,7 +112,7 @@ function costruisci() {
   // verso migliore: il piedino che va verso la colonna di prima sta a sinistra (rotazione 0 o 2)
   const verso = (it, x) => {
     let best = 0, bc = Infinity;
-    for (const r of [0, 2]) {
+    for (const r of it.sym.scritte ? [0] : [0, 2]) {   // i blocchi con le scritte non si capovolgono (testo al rovescio)
       let c = 0;
       for (const [f, dx, dy] of it.sym.pins) { const n = nodoDi(it, f), xs = xPin[n]; if (!xs || alim(n)) continue; const [rx] = ruota(dx, dy, r); c += Math.abs(x + rx - xs.reduce((a, b) => a + b, 0) / xs.length); }
       if (c < bc - 1e-9) { bc = c; best = r; }
@@ -249,7 +249,9 @@ function disegna() {
       if (it.c.type === 'cap') v = K.scriviValore(it.c.opt.c, 'F').replace(' ', '');
       if (it.c.type === 'led') v = K.LED_COL[it.c.opt.color][2];
       if (it.c.type === 'npn' || it.c.type === 'pnp') v = it.c.type === 'npn' ? 'BC107' : 'BC212';
-      lab = `<g class="sch-lab">${T(x * U, (y - (r % 2 ? 3 : 1.6)) * U, it.label, 'middle', 8)}${v ? T(x * U, (y + (r % 2 ? 3.6 : 2.4)) * U, v, 'middle', 7) : ''}</g>`;
+      // nei blocchi con le scritte il nome (U1) va sopra il titolo del blocco, non sopra il titolo
+      const dy = it.sym.scritte && !(r % 2) ? 3.2 : r % 2 ? 3 : 1.6;
+      lab = `<g class="sch-lab">${T(x * U, (y - dy) * U, it.label, 'middle', 8)}${v ? T(x * U, (y + (r % 2 ? 3.6 : 2.4)) * U, v, 'middle', 7) : ''}</g>`;
     }
     s += `<g class="sch-sim${sel}" data-sch="${it.id}" transform="translate(${x * U} ${y * U}) rotate(${r * 90})"><rect class="presa" x="-30" y="-30" width="60" height="60" fill="transparent"/>${it.sym.svg}</g>${lab}`;
   }
